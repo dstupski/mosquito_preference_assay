@@ -41,6 +41,10 @@ class Stimulus:
         out.update(self._params())
         return out
 
+    def params(self):
+        """The resolved type-specific parameters as a fresh JSON-safe dict."""
+        return dict(self._params())
+
     def _params(self):
         """Subclass hook: the type-specific parameters, all JSON-safe."""
         return {}

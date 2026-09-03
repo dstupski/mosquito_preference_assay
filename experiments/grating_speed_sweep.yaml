@@ -44,8 +44,7 @@ schedule:
   loop: false                          # one pass, then complete
   side_assignment: random
 
-trial:
-  duration_sec: {uniform: [25, 35]}
+duration_sec: {uniform: [25, 35]}   # per-trial jitter is still allowed
 
 display:
   circle_diameter_px: 220

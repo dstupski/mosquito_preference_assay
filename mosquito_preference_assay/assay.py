@@ -59,7 +59,8 @@ import py5  # noqa: E402  (must follow _ensure_java_home)
 from .experiment import Experiment  # noqa: E402
 from .stimulus_types import build_stimulus  # noqa: E402
 
-STATE_SCHEMA = "mosquito_preference_assay/stimulus_state/2"
+STATE_SCHEMA = "mosquito_preference_assay/stimulus_state/3"
+INFO_SCHEMA = "mosquito_preference_assay/experiment_info/1"
 
 # --- configuration: set via configure() BEFORE run(); never mutated after ---
 _cfg = {
@@ -444,15 +445,33 @@ def _start_new_trial():
             print(f"[assay] trial-change callback raised: {exc!r}")
 
 
-def current_state():
-    """A complete, JSON-serializable snapshot of what is on screen right now,
-    or None if the sketch hasn't finished setup() yet.
+def experiment_info():
+    """Static, per-run metadata. Publish once, latched, on ~/experiment_info --
+    it never changes during a run, so it is kept out of every stimulus_state
+    message. Available as soon as configure() has been called."""
+    experiment = _cfg["experiment"] or Experiment.default()
+    seed = _cfg["master_seed"]
+    return {
+        "schema": INFO_SCHEMA,
+        "stamp_wall": time.time(),
+        "start_mode": _cfg["start_mode"],
+        "master_seed": seed,
+        "noise_seed": None if seed is None else seed & 0xFFFFFFFF,
+        "experiment": experiment.summary(),
+    }
 
-    While ``phase`` is "armed" (triggered mode, before start_run()) this is a
-    short dict -- schema/stamp/phase/run_id/experiment -- with no trial fields.
-    Otherwise it carries everything needed to reconstruct the display offline:
-    experiment + condition, every resolved parameter of each side, the
-    geometry, the trial/seed ids, wall-clock trial start, seconds elapsed.
+
+def experiment_info_json():
+    return json.dumps(experiment_info(), separators=(",", ":"))
+
+
+def current_state():
+    """A JSON snapshot of what is on screen right now, or None before setup().
+
+    In the "armed" phase it is just schema/stamp/phase/run_id. Otherwise it is
+    the trial: ids + seed, the condition, geometry, and each side's name / type
+    / resolved params. Static run metadata (experiment, seeds) lives on
+    ~/experiment_info, not here.
     """
     with _lock:
         experiment = _rt["experiment"]
@@ -460,54 +479,46 @@ def current_state():
         run_id = _rt["run_id"]
         if experiment is None:
             return None
-        if _rt["left"] is None or _rt["right"] is None:
-            return {
-                "schema": STATE_SCHEMA,
-                "stamp_wall": time.time(),
-                "phase": phase_now,
-                "run_id": run_id,
-                "experiment": experiment.summary(),
-                "master_seed": _rt["master_seed"],
-                "noise_seed": _rt["noise_seed"],
-            }
-        left = _rt["left"]
-        right = _rt["right"]
-        geom = dict(_rt["geometry"])
-        start_wall = _rt["trial_start_wall"]
-        start_monotonic = _rt["trial_start_monotonic"]
+
         state = {
             "schema": STATE_SCHEMA,
             "stamp_wall": time.time(),
             "phase": phase_now,
             "run_id": run_id,
-            "experiment": experiment.summary(),
-            "master_seed": _rt["master_seed"],
-            "noise_seed": _rt["noise_seed"],
+        }
+        left = _rt["left"]
+        right = _rt["right"]
+        if left is None or right is None:
+            return state
+
+        state.update({
             "trial_id": _rt["trial_id"],
             "trial_seed": _rt["trial_seed"],
             "trial_uuid": _rt["trial_uuid"],
-            # The pairing. condition_ordered=False means it is an unordered
-            # {a,b} pair whose sides were counterbalanced THIS trial -- use
-            # left_name / right_name (below) for the actual placement, not the
-            # condition_name. =True means left/right are fixed by the pairing.
-            "condition_name": _rt["condition_name"],
-            "condition_ordered": _rt["condition_ordered"],
-            "trial_start_wall": start_wall,
+            "condition": {
+                # name: grouping key for the pairing. ordered=False -> "a|b"
+                # (sorted, side-independent); the sides this trial are in
+                # left/right below. ordered=True -> "a->b", sides fixed.
+                "name": _rt["condition_name"],
+                "ordered": _rt["condition_ordered"],
+            },
+            "trial_start_wall": _rt["trial_start_wall"],
             "trial_duration_sec": _rt["trial_duration_sec"],
-            "geometry": geom,
-            # Authoritative placement for this trial:
-            "left_name": _rt["left_name"],
-            "right_name": _rt["right_name"],
-            "left": left.describe(),    # what is drawn on the LEFT  (has slot="left")
-            "right": right.describe(),  # what is drawn on the RIGHT (has slot="right")
-        }
+            "geometry": dict(_rt["geometry"]),
+            "left": {
+                "name": _rt["left_name"],
+                "type": left.type_name,
+                "params": left.params(),
+            },
+            "right": {
+                "name": _rt["right_name"],
+                "type": right.type_name,
+                "params": right.params(),
+            },
+        })
+        start_monotonic = _rt["trial_start_monotonic"]
 
     state["elapsed_sec"] = max(0.0, time.monotonic() - start_monotonic)
-    state["left"]["slot"] = "left"
-    state["right"]["slot"] = "right"
-    if geom:
-        state["left"]["center_px"] = geom.get("left_center_px")
-        state["right"]["center_px"] = geom.get("right_center_px")
     return state
 
 

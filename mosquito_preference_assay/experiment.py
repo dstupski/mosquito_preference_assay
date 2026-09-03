@@ -15,8 +15,8 @@ An experiment YAML has three layers:
   schedule:    trial-sequence controls -- max_trials (both modes); order /
                loop / reshuffle_each_loop (pairs mode only).
 
-plus `trial.duration_sec` and a `display` block (circle diameter, centres,
-background).
+plus a top-level `duration_sec` (the single trial-length knob) and a `display`
+block (circle diameter, centres, background).
 
 Randomness is split so a session replays from the master seed and a single
 trial replays from its trial seed:
@@ -114,7 +114,7 @@ DEFAULT_DOC = {
     },
     "conditions": {"mode": "sample"},
     "schedule": {},
-    "trial": {"duration_sec": 30.0},
+    "duration_sec": 15.0,
     "display": {"circle_diameter_px": 200, "background_gray": 128},
 }
 
@@ -175,12 +175,15 @@ class Experiment:
         if self.max_trials is not None:
             self.max_trials = int(self.max_trials)
 
-        trial = doc.get("trial") or {}
-        self.duration_spec = trial.get("duration_sec", 30.0)
+        # A single top-level `duration_sec` (a `trial: {duration_sec: ...}`
+        # block is also accepted for older files). Default 15 s.
+        self.duration_spec = doc.get("duration_sec")
+        if self.duration_spec is None:
+            self.duration_spec = (doc.get("trial") or {}).get("duration_sec", 15.0)
         try:
             validate_params({"duration_sec": self.duration_spec})
         except ValueError as exc:
-            raise ExperimentError(f"trial.{exc}") from None
+            raise ExperimentError(str(exc)) from None
 
         disp = doc.get("display") or {}
         self.circle_diameter_px = int(disp.get("circle_diameter_px", 200))
@@ -319,6 +322,8 @@ class Experiment:
             "n_stimuli": len(self.stimuli),
             "mode": self.mode,
             "pool": list(self.pool),
+            "duration_sec": self.duration_spec,
+            "circle_diameter_px": self.circle_diameter_px,
             "max_trials": self.max_trials,
         }
         if self.mode == "sample":

@@ -40,8 +40,7 @@ schedule:
   max_trials: null           # integer to cap the run; null -> until Ctrl-C / window close
   # order / loop / reshuffle_each_loop apply only to conditions.mode: pairs
 
-trial:
-  duration_sec: 30.0         # literal or e.g. {uniform: [25, 35]}
+duration_sec: 15.0           # trial length in seconds (the single knob)
 
 display:
   circle_diameter_px: 200

@@ -25,7 +25,7 @@ def _doc(**over):
             "c": {"type": "jitter"},
         },
         "conditions": {"mode": "sample"},
-        "trial": {"duration_sec": 5.0},
+        "duration_sec": 5.0,
     }
     doc.update(over)
     return doc

@@ -184,14 +184,13 @@ conditions:
 
 # 3. SCHEDULE
 schedule:
-  max_trials: null                   # integer to cap the run
+  max_trials: null                   # integer to cap the run (1 = single trial)
   # mode: pairs only:
   order: shuffle                     # shuffle | sequential | random
   loop: true                         # false -> one pass then "complete"
   reshuffle_each_loop: true
 
-trial:
-  duration_sec: 30.0                 # literal or {uniform: [25, 35]}
+duration_sec: 15.0                    # trial length — the single knob (literal, or {uniform: [25,35]})
 
 display:
   circle_diameter_px: 200
@@ -274,7 +273,7 @@ or a `params_file`.
 | `experiment_file` | `"two_choice_default"` | name (→ `experiments/`), path, or `""` for the built-in default |
 | `start_mode` | `"auto"` | `"auto"` play immediately · `"triggered"` open ARMED |
 | `trigger_topic` | `"~/trigger"` | `std_msgs/Bool` — `true` start, `false` abort |
-| `master_seed` | `-1` | `-1` → random (logged, in every message); `≥0` → reproducible |
+| `master_seed` | `-1` | `-1` → random (logged + in `experiment_info`); `≥0` → reproducible |
 | `fullscreen` | `false` | `true` for the mosquito-facing display |
 | `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. |
 | `window_pos` | `""` | windowed only — place the sketch at `"x,y"` px |
@@ -291,16 +290,16 @@ an experiment YAML stays portable between rigs.
 
 ## Published messages
 
-Both topics are `std_msgs/String` carrying one JSON object. Names are relative
-to the node (`/stimulus_publisher/…`).
+Three topics, all `std_msgs/String` carrying one JSON object, all **latched**
+(reliable, transient_local, keep_last(1) — a subscriber or `ros2 bag record`
+that starts late immediately gets the current value). Names relative to the
+node (`/stimulus_publisher/…`).
 
-| Topic | When | QoS |
+| Topic | When | Contents |
 |---|---|---|
-| `~/stimulus_state` | every trial change + `heartbeat_hz` + phase changes | reliable, transient_local, keep_last(1) — **latched** |
-| `~/trial_start` | once per new trial (and on `phase: "complete"`) | same |
-
-Latching means a subscriber or `ros2 bag record` that starts mid-session
-immediately gets the current state.
+| `~/experiment_info` | **once**, at startup | static run metadata — see below |
+| `~/stimulus_state` | every trial change + `heartbeat_hz` + phase changes | the current trial |
+| `~/trial_start` | once per new trial (and on `phase: "complete"`) | same object as `stimulus_state` |
 
 `ros2 topic echo` truncates long strings — use `--full-length`, or:
 
@@ -309,50 +308,82 @@ ros2 topic echo --field data /stimulus_publisher/stimulus_state \
   | python3 -c 'import sys,json;[print(json.dumps(json.loads(l),indent=2)) for l in sys.stdin if l.strip()]'
 ```
 
-### JSON schema `mosquito_preference_assay/stimulus_state/2`
+### `~/experiment_info` — schema `mosquito_preference_assay/experiment_info/1`
 
-| Key | Meaning |
-|---|---|
-| `schema` | `"mosquito_preference_assay/stimulus_state/2"` |
-| `stamp_wall` | `time.time()` at publish |
-| `phase` | `"armed"` (triggered mode, pre-trigger) · `"running"` · `"complete"` |
-| `run_id` | increments per trigger; `0` before the first (`auto` mode starts at `1`) |
-| `experiment` | `{name, file, sha1, n_stimuli, mode, pool, max_trials, …}` — identifies the definition |
-| `master_seed`, `noise_seed` | session seeds (constant all run) |
-| `trial_id` | monotonic, from 0 |
-| `trial_seed` | given the draw, fully determines the trial's visuals |
-| `trial_uuid` | uuid4 |
-| `condition_name` | grouping key for the pairing. `condition_ordered: false` → `"a\|b"` (sorted, side-independent); `true` → `"a->b"` (left→right fixed) |
-| `condition_ordered` | bool |
-| `trial_start_wall`, `trial_duration_sec`, `elapsed_sec` | timing (`trial_duration_sec` is the per-trial resolved value) |
-| `geometry` | `window_w/h`, `fullscreen`, `monitor`, `circle_diameter_px`, `left_center_px [x,y]`, `right_center_px [x,y]` |
-| **`left_name` / `right_name`** | **authoritative** — the pool name actually on each side this trial |
-| `left` / `right` | full descriptor of that side: `type`, `uuid`, `diameter_px`, `slot`, `center_px`, **+ every resolved param** |
+Everything that's constant for the whole run, so it stays out of every
+`stimulus_state` message.
 
-**To know what's on which side, read `left_name` / `right_name` (or
-`left`/`right`), never `condition_name`** — for an unordered pairing the name
-is deliberately side-independent so trials of the same pairing group together.
+```json
+{"schema":"mosquito_preference_assay/experiment_info/1",
+ "stamp_wall": 1788458991.09,
+ "start_mode": "triggered",
+ "master_seed": 99, "noise_seed": 99,
+ "experiment": {"name":"single_trigger","file":".../single_trigger.yaml",
+                "sha1":"712444465f1a","n_stimuli":4,"mode":"sample",
+                "pool":["static_dark","jitter","telescope","moving_grating"],
+                "duration_sec":15.0,"circle_diameter_px":160,
+                "max_trials":1,"weights":null}}
+```
 
-While `phase == "armed"` the message is short: `schema`, `stamp_wall`,
-`phase`, `run_id`, `experiment`, `master_seed`, `noise_seed` — no trial fields.
-Check `phase` first.
+`master_seed` replays the whole run. `sha1` changes if you edit the experiment
+YAML, so recordings are distinguishable.
 
-Per-type params in `left`/`right`: `static_dark` → `fill_gray`; `jitter` →
-`fill_gray, amplitude_px, noise_speed, seed_x, seed_y`; `moving_grating` →
-`period_px, speed_px_per_sec, angle_deg, color_a_gray, color_b_gray`;
-`telescope` → `ring_spacing_px, speed_px_per_sec, color_a_gray, color_b_gray`.
+### `~/stimulus_state` — schema `mosquito_preference_assay/stimulus_state/3`
+
+**Armed** (triggered mode, before the trigger) — just:
+
+```json
+{"schema":"…/3","stamp_wall":…,"phase":"armed","run_id":0}
+```
+
+**Running / complete:**
+
+```json
+{
+  "schema": "mosquito_preference_assay/stimulus_state/3",
+  "stamp_wall": 1788459002.90,           // time.time() at publish
+  "phase": "running",                    // running | complete
+  "run_id": 1,                           // increments per trigger
+  "trial_id": 0,                         // monotonic from 0
+  "trial_seed": 767950141,               // + the condition -> replays this trial
+  "trial_uuid": "573d1acf-…",
+  "condition": {"name": "jitter|moving_grating", "ordered": false},
+  "trial_start_wall": 1788459000.95,
+  "trial_duration_sec": 3.0,             // resolved value
+  "elapsed_sec": 1.95,                   // since trial_start_wall
+  "geometry": {"window_w":1200,"window_h":800,"fullscreen":false,"monitor":null,
+               "circle_diameter_px":160,
+               "left_center_px":[300.0,400.0],"right_center_px":[900.0,400.0]},
+  "left":  {"name":"jitter","type":"jitter",
+            "params":{"fill_gray":20,"amplitude_px":20,"noise_speed":1.2,
+                      "seed_x":490.67,"seed_y":154.37}},
+  "right": {"name":"moving_grating","type":"moving_grating",
+            "params":{"period_px":24,"speed_px_per_sec":40,"angle_deg":150.47,
+                      "color_a_gray":240,"color_b_gray":20}}
+}
+```
+
+- **`left` / `right`** are the authoritative placement — `name` is the pool
+  entry, `type` is the marker behaviour (they differ when the YAML gives a
+  custom name). `params` are all resolved concrete values.
+- **`condition.name`** is a grouping key, *not* placement — `ordered: false` →
+  `"a|b"` sorted, side-independent (the sides this trial are in `left`/`right`);
+  `ordered: true` → `"a->b"`, sides fixed by the pairing.
+- Per-type `params`: `static_dark` → `fill_gray`; `jitter` → `fill_gray,
+  amplitude_px, noise_speed, seed_x, seed_y`; `moving_grating` → `period_px,
+  speed_px_per_sec, angle_deg, color_a_gray, color_b_gray`; `telescope` →
+  `ring_spacing_px, speed_px_per_sec, color_a_gray, color_b_gray`.
 
 ---
 
 ## Reproducing a session offline
 
-`master_seed` replays the entire run — every random draw, every side
-assignment, every resolved parameter. For a single trial: `left_name` /
-`right_name` give the placement, `trial_seed` + `random.Random(trial_seed)`
-replays the resolved params (`left` / `right` already carry the resolved
-values), and each animation phase is closed-form in `elapsed_sec`
-(grating: `(t·speed) % period`; telescope: `(t·speed) % (2·spacing)`; jitter:
-`py5.noise()` under the recorded `noise_seed` + `seed_x/seed_y`).
+`master_seed` (in `experiment_info`) replays the entire run — every random
+draw, every side assignment, every resolved parameter. For a single trial:
+`left`/`right` give the placement and resolved params directly, and each
+animation phase is closed-form in `elapsed_sec` (grating: `(t·speed) % period`;
+telescope: `(t·speed) % (2·spacing)`; jitter: `py5.noise()` under the recorded
+`noise_seed` + `seed_x/seed_y`).
 
 ---
 

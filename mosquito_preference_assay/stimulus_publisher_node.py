@@ -3,21 +3,23 @@
 complete JSON description of which stimulus is on the LEFT and which is on the
 RIGHT.
 
-Topics (names are relative to the node, i.e. /stimulus_publisher/...):
+Topics (names are relative to the node, i.e. /stimulus_publisher/...), all
+std_msgs/String carrying a JSON object, all latched (transient_local,
+keep_last 1):
 
-    stimulus_state   std_msgs/String   full state as a JSON object; published
-                     on every trial change AND at ``heartbeat_hz``. QoS is
-                     transient_local + keep_last(1), so a subscriber (or
-                     ``ros2 bag record``) that starts mid-trial still gets the
-                     current state immediately.
+    experiment_info   published once at startup -- static run metadata:
+                      experiment identity/sha1, seeds, pool, durations. Kept
+                      out of every stimulus_state message.
+                      schema "mosquito_preference_assay/experiment_info/1"
 
-    trial_start      std_msgs/String   the same JSON object, published exactly
-                     once per new trial -- a convenient downstream trigger.
+    stimulus_state    the current trial: ids + seed, condition, geometry, and
+                      each side's name/type/params. Published on every trial
+                      change and at ``heartbeat_hz``. Short (schema/phase/
+                      run_id only) while ARMED.
+                      schema "mosquito_preference_assay/stimulus_state/3"
 
-The JSON schema is "mosquito_preference_assay/stimulus_state/2"; see
-assay.current_state(). It carries the experiment identity + condition, and
-every resolved parameter and seed, so a whole session is reconstructable from
-a bag alone.
+    trial_start       the same stimulus_state object, once per new trial (and
+                      on phase: complete) -- a convenient downstream trigger.
 
 What is shown -- the stimulus pool, the pairings, the ordering and the timing
 -- comes from an experiment YAML (see the experiments/ folder), selected with
@@ -26,7 +28,7 @@ the `experiment_file` parameter. The rest of the parameters are operational:
     experiment_file     string  ""    experiment name / path; "" -> built-in default
     start_mode          string  auto  auto -> play immediately; triggered -> wait for a trigger
     trigger_topic       string ~/trigger   std_msgs/Bool: true = start run, false = abort
-    master_seed         int     -1    -1 -> random seed (logged, in every message)
+    master_seed         int     -1    -1 -> random seed (logged, in experiment_info)
     fullscreen          bool    False  True for the mosquito-facing display
     monitor             string  ""    "" -> primary; "2" -> that display; "span" -> all
     window_pos          string  ""    "x,y" px: place the (windowed) sketch here
@@ -129,6 +131,14 @@ class StimulusPublisher(Node):
         start_mode = str(self.declare_parameter("start_mode", "auto").value).strip()
         trigger_topic = str(self.declare_parameter("trigger_topic", "~/trigger").value)
 
+        # Resolve the seed to a concrete value now, so ~/experiment_info can
+        # carry it before the sketch thread runs setup().
+        if master_seed is None or master_seed < 0:
+            import random
+            master_seed = random.SystemRandom().randrange(2 ** 32)
+        else:
+            master_seed = int(master_seed)
+
         path = _resolve_experiment_file(experiment_file)
         experiment = Experiment.from_file(path) if path else Experiment.default()
         if experiment.mode == "sample":
@@ -146,7 +156,7 @@ class StimulusPublisher(Node):
 
         assay.configure(
             experiment=experiment,
-            master_seed=None if master_seed is None or master_seed < 0 else int(master_seed),
+            master_seed=master_seed,
             fullscreen=bool(fullscreen),
             monitor=monitor,
             window_pos=window_pos,
@@ -165,8 +175,16 @@ class StimulusPublisher(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
         )
+        self._info_pub = self.create_publisher(String, "~/experiment_info", latched)
         self._state_pub = self.create_publisher(String, "~/stimulus_state", latched)
         self._trial_pub = self.create_publisher(String, "~/trial_start", latched)
+
+        # Static run metadata (experiment, seeds, pool) -- published once here,
+        # kept out of every stimulus_state message.
+        info = String()
+        info.data = assay.experiment_info_json()
+        self._info_pub.publish(info)
+        self.get_logger().info(f"experiment_info: master_seed={master_seed}")
 
         assay.set_trial_change_callback(self._on_trial_change)
 
@@ -233,10 +251,10 @@ class StimulusPublisher(Node):
         if "trial_id" in state:
             self._trial_pub.publish(msg)
             self.get_logger().info(
-                f"[run {state['run_id']}] trial {state['trial_id']}: "
-                f"[{state['condition_name']}] LEFT={state['left_name']} "
-                f"RIGHT={state['right_name']} {state['trial_duration_sec']:.1f}s "
-                f"(phase={state['phase']}, trial_seed={state['trial_seed']})"
+                f"[run {state['run_id']}] trial {state['trial_id']} "
+                f"({state['phase']}): [{state['condition']['name']}] "
+                f"LEFT={state['left']['name']} RIGHT={state['right']['name']} "
+                f"{state['trial_duration_sec']:.1f}s (trial_seed={state['trial_seed']})"
             )
         else:
             self.get_logger().info(f"phase={state['phase']} (run {state['run_id']})")

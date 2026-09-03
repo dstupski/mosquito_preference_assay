@@ -3,7 +3,7 @@
 Brings up `stimulus_publisher` in *triggered* mode next to `ros2 bag record`.
 The node opens ARMED (blank screen). When a `std_msgs/Bool` with `data: true`
 arrives on the trigger topic it plays one trial (15 s with the default
-`single_trigger_15s` experiment), publishes a final `phase: "complete"`
+`single_trigger` experiment), publishes a final `phase: "complete"`
 message, then exits. The node exiting emits a launch Shutdown, which SIGINTs
 `ros2 bag record` so the bag is finalised (`metadata.yaml` written) and closed.
 
@@ -13,13 +13,13 @@ message, then exits. The node exiting emits a launch Shutdown, which SIGINTs
     ros2 topic pub --once /stimulus_publisher/trigger std_msgs/msg/Bool "{data: true}"
 
 Arguments
-    experiment_file  single_trigger_15s   experiment name or path
+    experiment_file  single_trigger   experiment name or path
     trigger_topic    /stimulus_publisher/trigger
     bag_dir          <cwd>/mpa_<timestamp>   output dir (must not already exist)
     record_all       true    true -> `ros2 bag record -a`; false -> assay topics + trigger only
     fullscreen       false
     monitor          ""      "" primary | "2" that display | "span"
-    master_seed      -1      -1 -> random (recorded in every message)
+    master_seed      -1      -1 -> random (recorded in experiment_info)
 """
 
 import datetime
@@ -47,7 +47,7 @@ _DEFAULT_BAG = os.path.join(
 
 def generate_launch_description():
     args = [
-        DeclareLaunchArgument("experiment_file", default_value="single_trigger_15s"),
+        DeclareLaunchArgument("experiment_file", default_value="single_trigger"),
         DeclareLaunchArgument("trigger_topic", default_value="/stimulus_publisher/trigger"),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),
         DeclareLaunchArgument("record_all", default_value="true"),
@@ -85,6 +85,7 @@ def generate_launch_description():
     bag_selected = ExecuteProcess(
         condition=UnlessCondition(LaunchConfiguration("record_all")),
         cmd=["ros2", "bag", "record", "-o", bag_dir,
+             "/stimulus_publisher/experiment_info",
              "/stimulus_publisher/stimulus_state",
              "/stimulus_publisher/trial_start",
              trigger_topic],
