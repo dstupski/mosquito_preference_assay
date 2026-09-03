@@ -12,8 +12,9 @@ An experiment YAML has three layers:
                                built from `generate` (all_pairs /
                                all_ordered_pairs / none) + `explicit` -
                                `exclude`, ordered by `schedule`.
-  schedule:    trial-sequence controls -- max_trials (both modes); order /
-               loop / reshuffle_each_loop (pairs mode only).
+  schedule:    trial-sequence controls -- max_trials (both modes; defaults to
+               1 when a `trigger:` block is present); order / loop /
+               reshuffle_each_loop (pairs mode only).
 
 plus a top-level `duration_sec` (the single trial-length knob) and a `display`
 block (circle diameter, centres, background).
@@ -172,6 +173,10 @@ class Experiment:
         self.loop = bool(sched.get("loop", True))
         self.reshuffle_each_loop = bool(sched.get("reshuffle_each_loop", True))
         self.max_trials = sched.get("max_trials")
+        if self.max_trials is None and doc.get("trigger") is not None:
+            # A triggered experiment fires exactly one trial per trigger unless
+            # `schedule.max_trials` says otherwise.
+            self.max_trials = 1
         if self.max_trials is not None:
             self.max_trials = int(self.max_trials)
 

@@ -119,3 +119,16 @@ def test_trigger_topic_and_node_shorthand():
 def test_trigger_block_needs_topic_or_node():
     with pytest.raises(ExperimentError):
         Experiment(_doc(trigger={}))
+
+
+def test_trigger_defaults_max_trials_to_one():
+    e = Experiment(_doc(trigger={"topic": "/go"}))
+    assert e.max_trials == 1
+    s = e.scheduler(random.Random(0))
+    assert s.next_trial() is not None
+    assert s.next_trial() is None            # exactly one trial
+
+
+def test_trigger_max_trials_explicit_wins():
+    e = Experiment(_doc(trigger={"topic": "/go"}, schedule={"max_trials": 4}))
+    assert e.max_trials == 4

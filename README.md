@@ -37,7 +37,7 @@ Three layers, top to bottom:
 |---|---|---|
 | **Stimulus pool** | `stimuli:` in the experiment YAML | Named, reusable stimulus definitions — a `type` (one of the built-in marker behaviours) plus `params`. A param can be a fixed value **or** a random spec resolved per trial. |
 | **Conditions** | `conditions:` | How each trial's `{left, right}` pair is chosen. `mode: sample` (default) draws two distinct stimuli from the pool at random each trial; `mode: pairs` cycles a fixed set of pairings. |
-| **Schedule** | `schedule:` | `max_trials` cap; for `mode: pairs`, the order (`shuffle` / `sequential` / `random`) and looping. |
+| **Schedule** | `schedule:` | Trial-sequence controls. `max_trials` caps the run (**defaults to 1 when a `trigger:` block is present** — one trigger, one trial). `order` / `loop` matter only for `mode: pairs` free-running sessions. |
 
 The **marker behaviours** are code (`stimuli.py`); the YAML only *composes
 instances* of them:
@@ -184,18 +184,18 @@ conditions:
   # explicit: [{left: control, right: grating}]   # + hand-listed pairs (fixed sides)
   # exclude:  [{a: wander, b: tunnel}]            # - drop pairs
 
-# 3. SCHEDULE
+# 3. SCHEDULE — omit it entirely for a triggered experiment (one trigger = one
+#    trial). Only needed to cap a batch, or to shape a mode: pairs run.
 schedule:
-  max_trials: null                   # integer to cap the run (1 = single trial)
-  # mode: pairs only:
-  order: shuffle                     # shuffle | sequential | random
-  loop: true                         # false -> one pass then "complete"
+  max_trials: null                   # cap the run; defaults to 1 if `trigger:` is set
+  order: shuffle                     # mode: pairs only — shuffle | sequential | random
+  loop: true                         # mode: pairs only — false -> one pass then "complete"
   reshuffle_each_loop: true
 
 duration_sec: 15.0                    # trial length — the single knob (literal, or {uniform: [25,35]})
 
-# Optional. Its presence makes this a triggered experiment (node opens ARMED,
-# waits). Omit it for an experiment that plays immediately.
+# Optional. Its presence makes this a triggered experiment: the node opens
+# ARMED, and each trigger fires one trial. Omit it to play immediately.
 trigger:
   topic: /arena/mosquito_present     # a std_msgs/Bool your tracking node publishes; true = go
   # node: arena                      # shorthand for topic: /arena/trigger

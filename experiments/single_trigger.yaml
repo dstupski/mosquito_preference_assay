@@ -1,6 +1,9 @@
 # One triggered trial, then everything concludes. Used by
 # triggered_capture.launch.py:  ARMED -> trigger -> one 15 s trial with two
 # markers drawn at random from the pool -> data saved to the bag -> shut down.
+#
+# There is no `schedule:` block: a `trigger:` block makes a run exactly one
+# trial. (Set schedule.max_trials only if you want a trigger to fire a batch.)
 schema: mosquito_preference_assay/experiment/1
 name: single_trigger
 description: One trigger, one 15 s trial, two markers drawn at random.
@@ -27,15 +30,11 @@ conditions:
   # pool: [...]                 # default: all stimuli
   # weights: {...}              # optional bias
 
-schedule:
-  max_trials: 1                 # exactly one trial, then the run is complete
-
 duration_sec: 15.0             # <-- the single knob for trial length
 
-# What fires the trial. Presence of this block makes the node open ARMED and
-# wait. Set `topic` to whatever your tracking/arena node publishes (a
-# std_msgs/Bool, true = go). `node: foo` is shorthand for topic /foo/trigger.
-# A `trigger_topic` ROS param still overrides this.
+# What fires the trial. Set `topic` to whatever your tracking / arena node
+# publishes (a std_msgs/Bool, true = go). `node: foo` is shorthand for
+# topic /foo/trigger. A `trigger_topic` ROS param still overrides this.
 trigger:
   topic: /arena/mosquito_present
 
