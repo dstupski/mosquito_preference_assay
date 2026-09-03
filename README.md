@@ -19,7 +19,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Writing an experiment](#writing-an-experiment)
-- [Triggered single-run capture](#triggered-single-run-capture)
+- [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a session offline](#reproducing-a-session-offline)
@@ -247,19 +247,32 @@ abort back to ARMED.
 `/<node>/trigger`); the `trigger_topic` ROS param overrides it. The resolved
 topic is recorded in `~/experiment_info`.
 
-**Firing it by hand / on the bench** — `test_trigger` node:
+### `test_trigger` — fire the trigger on command
+
+A bench helper that publishes the `std_msgs/Bool` trigger, so you can drive a
+triggered run without the real tracking nodes.
 
 ```bash
-ros2 run mosquito_preference_assay test_trigger \
-    --ros-args -p topic:=/arena/mosquito_present
-# then: [Enter] fires · a[Enter] aborts · q[Enter] quits
+# interactive — run from a terminal, one line per action:
+ros2 run mosquito_preference_assay test_trigger --ros-args -p topic:=/arena/mosquito_present
+#   [Enter] (or t / go)   -> publish true   (start the run)
+#   a[Enter] (or f / stop) -> publish false  (abort back to ARMED)
+#   q[Enter]               -> quit
 
-# or timed (for scripts / launch):
+# timed — for scripts or inside a launch file (no terminal needed):
 ros2 run mosquito_preference_assay test_trigger --ros-args \
     -p topic:=/arena/mosquito_present -p mode:=timer -p delay_sec:=3.0
 ```
 
-or just `ros2 topic pub --once /arena/mosquito_present std_msgs/msg/Bool "{data: true}"`.
+| Param | Default | Meaning |
+|---|---|---|
+| `topic` | `/stimulus_publisher/trigger` | topic to publish the `std_msgs/Bool` on — set it to match the experiment's `trigger.topic` |
+| `mode` | `keypress` | `keypress` (read stdin) or `timer` |
+| `delay_sec` | `2.0` | `timer` — fire `true` once, this long after startup |
+| `repeat_sec` | `0.0` | `timer` — if `> 0`, keep firing `true` every this many seconds |
+
+Equivalent one-liner without the node:
+`ros2 topic pub --once /arena/mosquito_present std_msgs/msg/Bool "{data: true}"`.
 
 ### Single-run capture
 
