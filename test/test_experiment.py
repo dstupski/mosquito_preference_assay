@@ -1,4 +1,4 @@
-"""Experiment parsing / conditions / scheduler.
+"""Experiment parsing / conditions / draw().
 
 Importing experiment.py pulls in py5 (via stimulus_types -> stimuli), which
 needs a Java 17 JVM; skipped cleanly if that isn't available.
@@ -31,6 +31,12 @@ def _doc(**over):
     return doc
 
 
+def _draws(doc, seed, n):
+    e = Experiment(doc)
+    rng = random.Random(seed)
+    return [tuple(d[:3]) for d in (e.draw(rng) for _ in range(n))]  # (left,right,name)
+
+
 def test_default_experiment_is_sample_mode():
     e = Experiment.default()
     assert e.mode == "sample"
@@ -39,32 +45,16 @@ def test_default_experiment_is_sample_mode():
 
 def test_sample_draw_is_two_distinct_from_pool():
     e = Experiment(_doc())
-    s = e.scheduler(random.Random(0))
+    rng = random.Random(0)
     for _ in range(200):
-        d = s.next_trial()
+        d = e.draw(rng)
         assert d.left != d.right
         assert {d.left, d.right} <= set(e.pool)
         assert d.ordered is False
 
 
-def _draw_sequence(doc, seed, n):
-    s = Experiment(doc).scheduler(random.Random(seed))
-    out = []
-    for _ in range(n):
-        d = s.next_trial()
-        out.append((d.left, d.right))
-    return out
-
-
 def test_sample_reproducible_from_seed():
-    assert _draw_sequence(_doc(), 9, 20) == _draw_sequence(_doc(), 9, 20)
-
-
-def test_max_trials_ends_the_run():
-    e = Experiment(_doc(schedule={"max_trials": 3}))
-    s = e.scheduler(random.Random(1))
-    got = [s.next_trial() for _ in range(5)]
-    assert [g is not None for g in got] == [True, True, True, False, False]
+    assert _draws(_doc(), 9, 20) == _draws(_doc(), 9, 20)
 
 
 def test_sample_needs_two_in_pool():
@@ -72,22 +62,38 @@ def test_sample_needs_two_in_pool():
         Experiment(_doc(conditions={"mode": "sample", "pool": ["a"]}))
 
 
-def test_pairs_all_pairs_count():
-    e = Experiment(_doc(conditions={"mode": "pairs", "generate": "all_pairs"}))
+def test_weights_bias_the_draw():
+    e = Experiment(_doc(conditions={"mode": "sample", "weights": {"a": 20, "b": 1, "c": 1}}))
+    rng = random.Random(0)
+    seen = [n for _ in range(2000) for n in e.draw(rng)[:2]]
+    assert seen.count("a") > seen.count("b") * 1.3
+    assert seen.count("a") > seen.count("c") * 1.3
+
+
+def test_pairs_mode_picks_one_pairing():
+    e = Experiment(_doc(conditions={
+        "mode": "pairs",
+        "pairs": [{"a": "a", "b": "b"}, {"left": "a", "right": "c"}],
+    }))
     assert e.mode == "pairs"
-    assert len(e.conditions) == 3   # C(3,2)
+    assert set(e.summary()["pairs"]) == {"a|b", "a->c"}
+    rng = random.Random(1)
+    for _ in range(50):
+        d = e.draw(rng)
+        assert {d.left, d.right} in ({"a", "b"}, {"a", "c"})
 
 
-def test_pairs_explicit_only_and_finite():
-    e = Experiment(_doc(
-        conditions={"mode": "pairs", "generate": "none",
-                    "explicit": [{"left": "a", "right": "b"}]},
-        schedule={"order": "sequential", "loop": False},
-    ))
-    s = e.scheduler(random.Random(0))
-    d = s.next_trial()
-    assert (d.left, d.right, d.ordered) == ("a", "b", True)
-    assert s.next_trial() is None   # one pair, no loop
+def test_pairs_fixed_sides():
+    fixed = Experiment(_doc(conditions={"mode": "pairs", "pairs": [{"left": "a", "right": "b"}]}))
+    rng = random.Random(0)
+    for _ in range(20):
+        d = fixed.draw(rng)
+        assert (d.left, d.right) == ("a", "b")
+
+
+def test_pairs_mode_needs_pairs_list():
+    with pytest.raises(ExperimentError):
+        Experiment(_doc(conditions={"mode": "pairs"}))
 
 
 def test_unknown_type_rejected():
@@ -101,10 +107,9 @@ def test_unknown_param_rejected():
                                  "b": {"type": "telescope"}}))
 
 
-def test_condition_references_undefined_stimulus():
+def test_pair_references_undefined_stimulus():
     with pytest.raises(ExperimentError):
-        Experiment(_doc(conditions={"mode": "pairs", "generate": "none",
-                                    "explicit": [{"left": "a", "right": "zzz"}]}))
+        Experiment(_doc(conditions={"mode": "pairs", "pairs": [{"a": "a", "b": "zzz"}]}))
 
 
 def test_trigger_block_absent_by_default():
@@ -121,14 +126,14 @@ def test_trigger_block_needs_topic_or_node():
         Experiment(_doc(trigger={}))
 
 
-def test_trigger_defaults_max_trials_to_one():
-    e = Experiment(_doc(trigger={"topic": "/go"}))
-    assert e.max_trials == 1
-    s = e.scheduler(random.Random(0))
-    assert s.next_trial() is not None
-    assert s.next_trial() is None            # exactly one trial
-
-
-def test_trigger_max_trials_explicit_wins():
-    e = Experiment(_doc(trigger={"topic": "/go"}, schedule={"max_trials": 4}))
-    assert e.max_trials == 4
+def test_realize_resolves_random_params_and_duration():
+    e = Experiment(_doc(
+        stimuli={"a": {"type": "moving_grating",
+                       "params": {"speed_px_per_sec": {"uniform": [10, 20]}}},
+                 "b": {"type": "static_dark"}},
+        duration_sec={"uniform": [3, 4]},
+    ))
+    plan = e.realize(e.draw(random.Random(0)), random.Random(0))
+    assert 3.0 <= plan.duration_sec <= 4.0
+    params = plan.left_params if plan.left_name == "a" else plan.right_params
+    assert 10.0 <= params["speed_px_per_sec"] <= 20.0

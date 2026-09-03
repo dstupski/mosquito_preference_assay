@@ -22,7 +22,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
-- [Reproducing a session offline](#reproducing-a-session-offline)
+- [Reproducing a run offline](#reproducing-a-run-offline)
 - [Adding a new marker behaviour](#adding-a-new-marker-behaviour)
 - [Development](#development)
 - [License & citing](#license--citing)
@@ -31,13 +31,13 @@ graphics; ROS 2 Humble for the plumbing.
 
 ## How it works
 
-Three layers, top to bottom:
+**A run is one trial.** The experiment YAML has two layers plus a duration:
 
 | Layer | Where | What it does |
 |---|---|---|
-| **Stimulus pool** | `stimuli:` in the experiment YAML | Named, reusable stimulus definitions — a `type` (one of the built-in marker behaviours) plus `params`. A param can be a fixed value **or** a random spec resolved per trial. |
-| **Conditions** | `conditions:` | How each trial's `{left, right}` pair is chosen. `mode: sample` (default) draws two distinct stimuli from the pool at random each trial; `mode: pairs` cycles a fixed set of pairings. |
-| **Schedule** | `schedule:` | Trial-sequence controls. `max_trials` caps the run (**defaults to 1 when a `trigger:` block is present** — one trigger, one trial). `order` / `loop` matter only for `mode: pairs` free-running sessions. |
+| **Stimulus pool** | `stimuli:` | Named, reusable stimulus definitions — a `type` (one of the built-in marker behaviours) plus `params`. A param can be a fixed value **or** a random spec resolved per trial. |
+| **Conditions** | `conditions:` | How the trial's `{left, right}` pair is chosen. `mode: sample` (default) draws **two distinct** stimuli from the pool at random; `mode: pairs` picks one entry from a `pairs:` list. |
+| | `duration_sec:` | How long the trial runs (a number, or a `{uniform: [...]}` spec). |
 
 The **marker behaviours** are code (`stimuli.py`); the YAML only *composes
 instances* of them:
@@ -50,13 +50,14 @@ instances* of them:
 | `telescope` | Concentric rings expanding outward — tunnel effect |
 
 The **ROS node** (`stimulus_publisher`) runs the sketch and publishes: the
-static run metadata once on `~/experiment_info`, and the current trial on
-`~/stimulus_state` (continuously) + `~/trial_start` (per trial). It can start
-playing immediately (`start_mode: auto`) or wait ARMED for a trigger message
-(`start_mode: triggered`).
+static run metadata once on `~/experiment_info`, and the trial state on
+`~/stimulus_state` (continuously) + `~/trial_start`. It plays immediately
+(`start_mode: auto`) or opens **ARMED** and waits for a `std_msgs/Bool`
+trigger (`start_mode: triggered`, or an experiment with a `trigger:` block).
+`phase` goes `armed → running → complete`; then a finite run's node exits.
 
-**Reproducibility:** one integer `master_seed` replays the whole run (every
-draw, every side, every parameter); it is logged at startup and published in
+**Reproducibility:** one integer `master_seed` replays the run — the draw, the
+sides, every resolved parameter. It's logged at startup and in
 `~/experiment_info`.
 
 ### Repository layout
@@ -66,14 +67,14 @@ mosquito_preference_assay/
   stimuli.py                   marker behaviours (Stimulus subclasses)
   stimulus_types.py            type registry + build_stimulus()
   param_spec.py                literal-or-random parameter resolution
-  experiment.py                load/validate the YAML, conditions, scheduler
+  experiment.py                load/validate the YAML; the trial draw
   assay.py                     the py5 sketch + thread-safe current_state()
   stimulus_publisher_node.py   the ROS 2 node
   test_trigger_node.py         bench helper: publish the Bool trigger on command
 experiments/                   experiment definitions (installed to share/)
-  two_choice_default.yaml       random-draw default (also the built-in default)
-  grating_speed_sweep.yaml      fixed pairings, random-range params, finite run
-  single_trigger.yaml           one triggered 15 s trial, then everything concludes
+  two_choice_default.yaml       random draw of 2 markers (also the built-in default)
+  control_vs_grating.yaml       mode: pairs — control vs a random grating band
+  single_trigger.yaml           triggered 15 s trial, then everything concludes
 config/assay_params.yaml       operational ROS params
 launch/
   assay.launch.py               node + params file
@@ -131,15 +132,14 @@ ros2 launch mosquito_preference_assay assay.launch.py
 
 # a specific experiment, fullscreen on projector 2
 ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
-    -p experiment_file:=grating_speed_sweep -p fullscreen:=true -p monitor:=2
+    -p experiment_file:=control_vs_grating -p fullscreen:=true -p monitor:=2
 
 # record alongside your other topics
 ros2 bag record /stimulus_publisher/stimulus_state /stimulus_publisher/trial_start
 ```
 
-Stop with Ctrl-C or by closing the sketch window. A finite experiment
-(`schedule.max_trials`, or `mode: pairs` + `loop: false`) shuts the node down
-when it finishes.
+The trial runs for its `duration_sec`, then `phase` becomes `complete` and the
+node exits (Ctrl-C or closing the window also stop it).
 
 **No-ROS preview** (built-in default, just to eyeball the stimuli — publishes
 nothing):
@@ -148,7 +148,7 @@ nothing):
 ros2 run mosquito_preference_assay assay
 ```
 
-Keys while running: `d` toggle the debug overlay · `n` next trial · `esc` quit.
+Keys while running: `d` toggle the debug overlay · `n` draw a fresh trial · `esc` quit.
 
 ---
 
@@ -161,9 +161,9 @@ shape:
 schema: mosquito_preference_assay/experiment/1
 name: my_experiment
 
-# 1. POOL — named stimulus specs. Any param is a literal OR a random spec
-#    resolved per trial from the trial seed:
-#      {uniform: [lo,hi]}  {randint: [lo,hi]}  {choice: [...]}  {normal: [mu,sd]}
+# POOL — named stimulus specs. Any param is a literal OR a random spec
+# resolved per trial from the trial seed:
+#   {uniform: [lo,hi]}  {randint: [lo,hi]}  {choice: [...]}  {normal: [mu,sd]}
 stimuli:
   control:      {type: static_dark,    params: {fill_gray: 20}}
   wander:       {type: jitter,         params: {amplitude_px: 20, noise_speed: 1.2}}
@@ -172,32 +172,22 @@ stimuli:
                                                 angle_deg: {uniform: [0, 360]}}}
   tunnel:       {type: telescope,      params: {ring_spacing_px: 18, speed_px_per_sec: 50}}
 
-# 2. CONDITIONS — how each trial picks its {left, right} pair.
+# CONDITIONS — how the trial picks its {left, right} pair.
 conditions:
   mode: sample                       # sample (default) | pairs
   pool: [control, wander, grating, tunnel]   # subset of `stimuli`; default = all
-  # weights: {grating: 2, control: 1}         # optional, sample mode — bias the draw
+  # weights: {grating: 2, control: 1}         # sample mode — bias the draw (default: equal)
+  # --- mode: pairs: pick one entry at random; {a,b} randomises sides, {left,right} fixes them ---
+  # pairs:
+  #   - {a: control, b: grating}
+  #   - {left: control, right: tunnel}
 
-  # --- mode: pairs only ---
-  # generate: all_pairs              # all_pairs | all_ordered_pairs | none
-  # allow_same: false                # include X-vs-X pairs
-  # explicit: [{left: control, right: grating}]   # + hand-listed pairs (fixed sides)
-  # exclude:  [{a: wander, b: tunnel}]            # - drop pairs
-
-# 3. SCHEDULE — omit it entirely for a triggered experiment (one trigger = one
-#    trial). Only needed to cap a batch, or to shape a mode: pairs run.
-schedule:
-  max_trials: null                   # cap the run; defaults to 1 if `trigger:` is set
-  order: shuffle                     # mode: pairs only — shuffle | sequential | random
-  loop: true                         # mode: pairs only — false -> one pass then "complete"
-  reshuffle_each_loop: true
-
-duration_sec: 15.0                    # trial length — the single knob (literal, or {uniform: [25,35]})
+duration_sec: 15.0                    # trial length in seconds (literal, or {uniform: [25,35]})
 
 # Optional. Its presence makes this a triggered experiment: the node opens
-# ARMED, and each trigger fires one trial. Omit it to play immediately.
+# ARMED and waits for a std_msgs/Bool before the trial runs. Omit to play now.
 trigger:
-  topic: /arena/mosquito_present     # a std_msgs/Bool your tracking node publishes; true = go
+  topic: /arena/mosquito_present     # your tracking node publishes true = go
   # node: arena                      # shorthand for topic: /arena/trigger
 
 display:
@@ -209,30 +199,28 @@ display:
 
 ### `mode: sample` (default)
 
-Each trial: draw **two distinct** stimuli from `pool` at random (no
-replacement) — first drawn → right, second → left. `weights:` biases the draw.
-Coverage of pairings is by chance. This is the standard preference-assay
-design.
+Draw **two distinct** stimuli from `pool` at random (no replacement) — first
+drawn → right, second → left. `weights:` biases the draw. This is the standard
+preference-assay design.
 
 ### `mode: pairs`
 
-Build a **fixed set** of pairings — `generate: all_pairs` (every distinct
-unordered pair), `all_ordered_pairs` (left/right fixed), or `none` — then add
-`explicit:` pairs and drop `exclude:` pairs. `schedule.order` walks the set;
-unordered pairs get their sides coin-flipped each trial for counterbalancing.
-Use this for balanced factorial designs or a hand-picked pairing list.
+Give a `pairs:` list; one entry is picked at random for the trial. `{a: X, b: Y}`
+randomises which side each lands on; `{left: X, right: Y}` fixes them. Use it for
+a control-vs-treatment design (see `experiments/control_vs_grating.yaml`).
 
 ### Choosing an experiment at launch
 
 ```bash
--p experiment_file:=grating_speed_sweep     # a name -> experiments/<name>.yaml
+-p experiment_file:=control_vs_grating     # a name -> experiments/<name>.yaml
 -p experiment_file:=/abs/path/to/my.yaml    # or a path
 -p experiment_file:=""                      # the built-in default
 ```
 
 Malformed definitions fail at startup with a specific message — unknown
 `type`, unknown param name, a stimulus referenced in `conditions` that isn't
-defined, a bad random spec, `mode: sample` with < 2 pool entries, and so on.
+defined, a bad random spec, `mode: sample` with < 2 pool entries, `mode: pairs`
+with no `pairs:` list, and so on.
 
 ---
 
@@ -337,8 +325,8 @@ node (`/stimulus_publisher/…`).
 | Topic | When | Contents |
 |---|---|---|
 | `~/experiment_info` | **once**, at startup | static run metadata — see below |
-| `~/stimulus_state` | every trial change + `heartbeat_hz` + phase changes | the current trial |
-| `~/trial_start` | once per new trial (and on `phase: "complete"`) | same object as `stimulus_state` |
+| `~/stimulus_state` | at trial start, at `heartbeat_hz`, and on phase changes | the trial state |
+| `~/trial_start` | at trial start and on `phase: "complete"` | same object as `stimulus_state` |
 
 `ros2 topic echo` truncates long strings — use `--full-length`, or:
 
@@ -360,12 +348,13 @@ Everything that's constant for the whole run, so it stays out of every
  "experiment": {"name":"single_trigger","file":".../single_trigger.yaml",
                 "sha1":"712444465f1a","n_stimuli":4,"mode":"sample",
                 "pool":["static_dark","jitter","telescope","moving_grating"],
-                "duration_sec":15.0,"circle_diameter_px":160,
-                "max_trials":1,"weights":null}}
+                "duration_sec":15.0,"circle_diameter_px":200,
+                "trigger_topic":"/arena/mosquito_present","weights":null}}
 ```
 
-`master_seed` replays the whole run. `sha1` changes if you edit the experiment
-YAML, so recordings are distinguishable.
+`mode: pairs` replaces `weights` with `pairs` (the list of pairing names).
+`master_seed` replays the run. `sha1` changes if you edit the experiment YAML,
+so recordings are distinguishable.
 
 ### `~/stimulus_state` — schema `mosquito_preference_assay/stimulus_state/3`
 
@@ -415,14 +404,14 @@ YAML, so recordings are distinguishable.
 
 ---
 
-## Reproducing a session offline
+## Reproducing a run offline
 
-`master_seed` (in `experiment_info`) replays the entire run — every random
-draw, every side assignment, every resolved parameter. For a single trial:
-`left`/`right` give the placement and resolved params directly, and each
-animation phase is closed-form in `elapsed_sec` (grating: `(t·speed) % period`;
-telescope: `(t·speed) % (2·spacing)`; jitter: `py5.noise()` under the recorded
-`noise_seed` + `seed_x/seed_y`).
+`master_seed` (in `experiment_info`) replays the run — the draw, the sides,
+every resolved parameter. `left`/`right` in `stimulus_state` give the placement
+and resolved params directly, and each animation phase is closed-form in
+`elapsed_sec` (grating: `(t·speed) % period`; telescope: `(t·speed) %
+(2·spacing)`; jitter: `py5.noise()` under the recorded `noise_seed` +
+`seed_x/seed_y`).
 
 ---
 

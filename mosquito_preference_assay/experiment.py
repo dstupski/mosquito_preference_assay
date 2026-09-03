@@ -1,31 +1,27 @@
 """Load and interpret an experiment definition.
 
-An experiment YAML has three layers:
+An experiment is **one trial**. The YAML has:
 
   stimuli:     named, reusable stimulus specs (type + params; params may be
                literals or random specs -- see param_spec.py)
-  conditions:  how each trial's {left, right} pairing is chosen --
-                 mode: sample  (default)  each trial draws TWO DISTINCT
-                               stimuli from `pool` at random (no replacement);
-                               first drawn -> right, second -> left.
-                 mode: pairs              cycle through a FIXED set of pairings
-                               built from `generate` (all_pairs /
-                               all_ordered_pairs / none) + `explicit` -
-                               `exclude`, ordered by `schedule`.
-  schedule:    trial-sequence controls -- max_trials (both modes; defaults to
-               1 when a `trigger:` block is present); order / loop /
-               reshuffle_each_loop (pairs mode only).
+  conditions:  how the trial's {left, right} pair is chosen --
+                 mode: sample  (default)  draw TWO DISTINCT stimuli from
+                               `pool` at random (no replacement); first drawn
+                               -> right, second -> left. `weights` biases it.
+                 mode: pairs              pick one entry from `pairs` at random;
+                               {a, b} randomises the sides, {left, right} fixes
+                               them.
+  duration_sec: trial length (a number, or a {uniform: [...]} spec)
+  display:     circle diameter, marker centres, background
+  trigger:     optional -- {topic: ...} or {node: ...}; its presence makes the
+               node open ARMED and wait for a std_msgs/Bool before running.
 
-plus a top-level `duration_sec` (the single trial-length knob) and a `display`
-block (circle diameter, centres, background).
+Randomness is split so the run replays from the master seed and the trial's
+visuals replay from its trial seed:
 
-Randomness is split so a session replays from the master seed and a single
-trial replays from its trial seed:
-
-  * the Scheduler consumes the *master* RNG (the sample draw / the pair order
-    and per-trial side flip)
+  * Experiment.draw() consumes the *master* RNG (which stimuli, which sides)
   * Experiment.realize() consumes the *trial* RNG (resolving random param
-    specs, per-trial duration)
+    specs and the per-trial duration)
 """
 
 import copy
@@ -51,8 +47,7 @@ TrialPlan = namedtuple(
     "left_params right_params duration_sec",
 )
 
-# What the Scheduler hands back each trial: the two stimulus names with sides
-# already decided, plus a grouping key.
+# The two stimulus names with sides already decided, plus a grouping key.
 _Draw = namedtuple("_Draw", "left right name ordered")
 
 
@@ -66,12 +61,11 @@ class StimulusSpec:
 
 
 class Condition:
-    """A fixed {left, right} pairing (pairs mode only).
+    """A {left, right} pairing (pairs mode).
 
-    ordered=True  -> ``a`` is always LEFT, ``b`` always RIGHT; name "a->b".
-    ordered=False -> unordered pair; the side flip is per trial; name is the
-                     two members sorted and joined with "|" -- a stable,
-                     position-independent key for grouping trials.
+    ordered=True  -> ``a`` is LEFT, ``b`` is RIGHT; name "a->b".
+    ordered=False -> unordered; sides randomised per trial; name is the two
+                     members sorted and joined with "|".
     """
 
     __slots__ = ("a", "b", "ordered", "name")
@@ -87,22 +81,25 @@ class Condition:
 
 
 def _pair_ab(pair):
+    """Return (a, b, ordered) for a `pairs:` entry: {left,right} fixes the
+    sides, {a,b} (or [a,b]) randomises them."""
     if isinstance(pair, (list, tuple)) and len(pair) == 2:
-        return pair[0], pair[1]
+        return pair[0], pair[1], False
     if isinstance(pair, dict):
         if "left" in pair and "right" in pair:
-            return pair["left"], pair["right"]
+            return pair["left"], pair["right"], True
         if "a" in pair and "b" in pair:
-            return pair["a"], pair["b"]
-    raise ExperimentError(f"bad pair {pair!r}; use [a, b] or {{left: a, right: b}}")
+            return pair["a"], pair["b"], False
+    raise ExperimentError(
+        f"bad pairs entry {pair!r}; use {{a: x, b: y}} or {{left: x, right: y}}"
+    )
 
 
-# Built-in default: the four classic markers, each trial a fresh random draw of
-# two distinct markers from the pool.
+# Built-in default: two distinct markers drawn at random from the four classics.
 DEFAULT_DOC = {
     "schema": EXPERIMENT_SCHEMA,
     "name": "two_choice_default",
-    "description": "Each trial: two distinct markers drawn at random from the pool.",
+    "description": "Two distinct markers drawn at random from the pool.",
     "stimuli": {
         "static_dark": {"type": "static_dark", "params": {"fill_gray": 20}},
         "jitter": {"type": "jitter",
@@ -114,7 +111,6 @@ DEFAULT_DOC = {
                       "params": {"ring_spacing_px": 18, "speed_px_per_sec": 50}},
     },
     "conditions": {"mode": "sample"},
-    "schedule": {},
     "duration_sec": 15.0,
     "display": {"circle_diameter_px": 200, "background_gray": 128},
 }
@@ -164,27 +160,8 @@ class Experiment:
         self.stimuli = self._parse_stimuli(doc.get("stimuli") or {})
         self._parse_conditions(doc.get("conditions") or {})
 
-        sched = doc.get("schedule") or {}
-        self.order = sched.get("order", "shuffle")
-        if self.order not in ("shuffle", "sequential", "random"):
-            raise ExperimentError(
-                f"schedule.order {self.order!r} must be shuffle | sequential | random"
-            )
-        self.loop = bool(sched.get("loop", True))
-        self.reshuffle_each_loop = bool(sched.get("reshuffle_each_loop", True))
-        self.max_trials = sched.get("max_trials")
-        if self.max_trials is None and doc.get("trigger") is not None:
-            # A triggered experiment fires exactly one trial per trigger unless
-            # `schedule.max_trials` says otherwise.
-            self.max_trials = 1
-        if self.max_trials is not None:
-            self.max_trials = int(self.max_trials)
-
-        # A single top-level `duration_sec` (a `trial: {duration_sec: ...}`
-        # block is also accepted for older files). Default 15 s.
-        self.duration_spec = doc.get("duration_sec")
-        if self.duration_spec is None:
-            self.duration_spec = (doc.get("trial") or {}).get("duration_sec", 15.0)
+        # A number, or a {uniform: [...]} / {choice: [...]} spec.
+        self.duration_spec = doc.get("duration_sec", 15.0)
         try:
             validate_params({"duration_sec": self.duration_spec})
         except ValueError as exc:
@@ -200,8 +177,8 @@ class Experiment:
 
         # Optional: what fires the trial. Its presence means this is a triggered
         # experiment (the node opens ARMED). A ROS param still overrides.
-        #   trigger: {topic: /arena_tracking/mosquito_detected}
-        #   trigger: {node: arena_tracking}     # -> /arena_tracking/trigger
+        #   trigger: {topic: /arena/mosquito_present}
+        #   trigger: {node: arena}     # -> /arena/trigger
         self.trigger_topic = None
         trig = doc.get("trigger")
         if trig is not None:
@@ -254,7 +231,7 @@ class Experiment:
                 raise ExperimentError(f"conditions.pool: {n!r} is not a defined stimulus")
 
         self.weights = None
-        self.conditions = []
+        self.pairs = []
 
         if self.mode == "sample":
             if len(self.pool) < 2:
@@ -272,68 +249,59 @@ class Experiment:
             return
 
         # mode == "pairs"
-        self.conditions = self._build_pair_conditions(cdoc)
-        if not self.conditions:
-            raise ExperimentError("conditions.mode=pairs produced no pairings")
-
-    def _build_pair_conditions(self, cdoc):
-        gen = cdoc.get("generate", "all_pairs")
-        if gen not in ("all_pairs", "all_ordered_pairs", "none"):
-            raise ExperimentError(
-                f"conditions.generate {gen!r} must be all_pairs | all_ordered_pairs | none"
-            )
-        allow_same = bool(cdoc.get("allow_same", False))
-        conds = {}  # name -> Condition (dedup, preserves insertion order)
-
-        def add(a, b, ordered):
-            conds.setdefault(Condition(a, b, ordered).name, Condition(a, b, ordered))
-
-        if gen in ("all_pairs", "all_ordered_pairs"):
-            ordered = gen == "all_ordered_pairs"
-            for i, a in enumerate(self.pool):
-                for j, b in enumerate(self.pool):
-                    if a == b and not allow_same:
-                        continue
-                    if not ordered and j < i:
-                        continue
-                    add(a, b, ordered)
-
-        for pair in cdoc.get("explicit") or []:
-            a, b = _pair_ab(pair)
+        raw_pairs = cdoc.get("pairs") or []
+        if not raw_pairs:
+            raise ExperimentError("conditions.mode=pairs needs a non-empty `pairs` list")
+        for entry in raw_pairs:
+            a, b, ordered = _pair_ab(entry)
             for n in (a, b):
                 if n not in self.stimuli:
                     raise ExperimentError(
-                        f"conditions.explicit: {n!r} is not a defined stimulus"
+                        f"conditions.pairs: {n!r} is not a defined stimulus"
                     )
-            add(a, b, ordered=True)
+            self.pairs.append(Condition(a, b, ordered))
 
-        for pair in cdoc.get("exclude") or []:
-            a, b = _pair_ab(pair)
-            for key in [k for k, c in conds.items() if {c.a, c.b} == {a, b}]:
-                del conds[key]
+    # -- the trial ----------------------------------------------------- #
+    def draw(self, rng):
+        """Choose the trial's two stimuli and their sides, using the master
+        RNG. Returns a _Draw."""
+        if self.mode == "sample":
+            pool, weights = self.pool, self.weights
+            if weights:
+                first = rng.choices(pool, weights=[weights[n] for n in pool], k=1)[0]
+                rest = [n for n in pool if n != first]
+                second = rng.choices(
+                    rest, weights=[weights[n] for n in rest], k=1
+                )[0]
+                right, left = first, second
+            else:
+                right, left = rng.sample(pool, 2)     # 2 distinct, uniform
+            return _Draw(left=left, right=right,
+                         name="|".join(sorted((left, right))), ordered=False)
 
-        return list(conds.values())
+        cond = rng.choice(self.pairs)
+        if cond.ordered:
+            left, right = cond.a, cond.b
+        elif rng.random() < 0.5:
+            left, right = cond.a, cond.b
+        else:
+            left, right = cond.b, cond.a
+        return _Draw(left=left, right=right, name=cond.name, ordered=cond.ordered)
 
-    # -- per-trial ------------------------------------------------------- #
     def realize(self, draw, trial_rng):
-        """Turn a Scheduler _Draw (sides already decided) into a TrialPlan,
-        resolving random param specs and the per-trial duration."""
+        """Turn a _Draw (sides already decided) into a concrete TrialPlan,
+        resolving random param specs and the trial duration."""
         left = self.stimuli[draw.left]
         right = self.stimuli[draw.right]
-        left_params = resolve_params(left.params, trial_rng)
-        right_params = resolve_params(right.params, trial_rng)
-        duration = float(resolve_value(self.duration_spec, trial_rng))
         return TrialPlan(
             condition_name=draw.name,
             condition_ordered=draw.ordered,
             left_name=draw.left, right_name=draw.right,
             left_type=left.type, right_type=right.type,
-            left_params=left_params, right_params=right_params,
-            duration_sec=duration,
+            left_params=resolve_params(left.params, trial_rng),
+            right_params=resolve_params(right.params, trial_rng),
+            duration_sec=float(resolve_value(self.duration_spec, trial_rng)),
         )
-
-    def scheduler(self, rng):
-        return Scheduler(self, rng)
 
     def summary(self):
         out = {
@@ -345,15 +313,12 @@ class Experiment:
             "pool": list(self.pool),
             "duration_sec": self.duration_spec,
             "circle_diameter_px": self.circle_diameter_px,
-            "max_trials": self.max_trials,
             "trigger_topic": self.trigger_topic,
         }
         if self.mode == "sample":
             out["weights"] = self.weights
         else:
-            out["n_conditions"] = len(self.conditions)
-            out["order"] = self.order
-            out["loop"] = self.loop
+            out["pairs"] = [c.name for c in self.pairs]
         return out
 
 
@@ -363,75 +328,3 @@ def _center_or_none(value, label):
     if isinstance(value, (list, tuple)) and len(value) == 2:
         return [float(value[0]), float(value[1])]
     raise ExperimentError(f"{label}: expected [x, y] or null, got {value!r}")
-
-
-class Scheduler:
-    """Emits one _Draw per trial. Returns None when the run is complete
-    (max_trials reached, or -- pairs mode -- the set is exhausted and
-    loop=False)."""
-
-    def __init__(self, experiment, rng):
-        self.exp = experiment
-        self.rng = rng
-        self._queue = []
-        self._passes = 0
-        self._emitted = 0
-
-    def next_trial(self):
-        if self.exp.max_trials is not None and self._emitted >= self.exp.max_trials:
-            return None
-
-        if self.exp.mode == "sample":
-            draw = self._sample_draw()
-        else:
-            draw = self._pairs_draw()
-            if draw is None:
-                return None
-
-        self._emitted += 1
-        return draw
-
-    # -- sample mode -- #
-    def _sample_draw(self):
-        pool = self.exp.pool
-        weights = self.exp.weights
-        if weights:
-            wl = [weights[n] for n in pool]
-            first = self.rng.choices(pool, weights=wl, k=1)[0]
-            rest = [n for n in pool if n != first]
-            second = self.rng.choices(
-                rest, weights=[weights[n] for n in rest], k=1
-            )[0]
-            right, left = first, second
-        else:
-            right, left = self.rng.sample(pool, 2)   # 2 distinct, uniform
-        name = "|".join(sorted((left, right)))
-        return _Draw(left=left, right=right, name=name, ordered=False)
-
-    # -- pairs mode -- #
-    def _refill(self):
-        conds = list(self.exp.conditions)
-        if self.exp.order == "shuffle" and (
-            self._passes == 0 or self.exp.reshuffle_each_loop
-        ):
-            self.rng.shuffle(conds)
-        self._queue = conds
-        self._passes += 1
-
-    def _pairs_draw(self):
-        if self.exp.order == "random":
-            cond = self.rng.choice(self.exp.conditions)
-        else:
-            if not self._queue:
-                if self._passes >= 1 and not self.exp.loop:
-                    return None
-                self._refill()
-            cond = self._queue.pop(0)
-
-        if cond.ordered:
-            left, right = cond.a, cond.b
-        elif self.rng.random() < 0.5:
-            left, right = cond.a, cond.b
-        else:
-            left, right = cond.b, cond.a
-        return _Draw(left=left, right=right, name=cond.name, ordered=cond.ordered)

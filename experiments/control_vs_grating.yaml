@@ -1,0 +1,45 @@
+# Example of conditions.mode: pairs -- the trial is always static-dark control
+# vs. one grating, with the grating's speed band picked at random. Sides are
+# randomised ({a, b}); use {left, right} to fix them.
+schema: mosquito_preference_assay/experiment/1
+name: control_vs_grating
+description: Static-dark control vs. a slow / medium / fast drifting grating.
+
+stimuli:
+  control:
+    type: static_dark
+    params: {fill_gray: 20}
+
+  grating_slow:
+    type: moving_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: {uniform: [8, 16]}
+      angle_deg: {choice: [0, 90]}
+
+  grating_medium:
+    type: moving_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: {uniform: [30, 50]}
+      angle_deg: {choice: [0, 90]}
+
+  grating_fast:
+    type: moving_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: {uniform: [80, 120]}
+      angle_deg: {choice: [0, 90]}
+
+conditions:
+  mode: pairs
+  pairs:
+    - {a: control, b: grating_slow}
+    - {a: control, b: grating_medium}
+    - {a: control, b: grating_fast}
+
+duration_sec: {uniform: [25, 35]}
+
+display:
+  circle_diameter_px: 220
+  background_gray: 128

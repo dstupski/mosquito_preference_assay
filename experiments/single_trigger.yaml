@@ -1,9 +1,6 @@
 # One triggered trial, then everything concludes. Used by
 # triggered_capture.launch.py:  ARMED -> trigger -> one 15 s trial with two
 # markers drawn at random from the pool -> data saved to the bag -> shut down.
-#
-# There is no `schedule:` block: a `trigger:` block makes a run exactly one
-# trial. (Set schedule.max_trials only if you want a trigger to fire a batch.)
 schema: mosquito_preference_assay/experiment/1
 name: single_trigger
 description: One trigger, one 15 s trial, two markers drawn at random.

@@ -45,7 +45,7 @@ Run:
 
     ros2 launch mosquito_preference_assay assay.launch.py
     ros2 run mosquito_preference_assay stimulus_publisher --ros-args \\
-        -p experiment_file:=grating_speed_sweep -p fullscreen:=true
+        -p experiment_file:=control_vs_grating -p fullscreen:=true
     ros2 bag record /stimulus_publisher/stimulus_state /stimulus_publisher/trial_start
 """
 
@@ -147,7 +147,7 @@ class StimulusPublisher(Node):
         if experiment.mode == "sample":
             how = f"mode=sample, pool={experiment.pool}"
         else:
-            how = f"mode=pairs, {len(experiment.conditions)} conditions"
+            how = f"mode=pairs, {len(experiment.pairs)} pairings"
         self.get_logger().info(
             f"experiment {experiment.name!r} from {experiment.source} "
             f"(sha1 {experiment.sha1}, {how})"

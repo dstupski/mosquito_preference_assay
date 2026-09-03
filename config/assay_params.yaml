@@ -1,6 +1,6 @@
 # Operational parameters for the mosquito_preference_assay stimulus_publisher.
 #
-# The *experiment design* (stimulus pool, conditions, schedule, durations,
+# The *experiment design* (stimulus pool, conditions, duration,
 # geometry) lives in a separate experiment YAML -- see the experiments/ folder
 # and set `experiment_file` below. This file is only about how this run of the
 # node behaves on this machine.

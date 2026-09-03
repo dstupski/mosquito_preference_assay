@@ -1,10 +1,13 @@
 """Mosquito visual preference assay (py5 / pythonic Processing).
 
-Two circular markers, left and right; each trial presents one *condition* (a
-{left, right} pairing drawn from the experiment definition) for its duration,
-then advances. What the pool of stimuli is, which pairings can occur, the
-ordering and the timing all come from an :class:`~.experiment.Experiment`
-(loaded from a YAML file, or the built-in default).
+Two circular markers, left and right. A run is ONE trial: two stimuli (drawn
+per the experiment's ``conditions``) are shown for ``duration_sec``, then the
+run is complete. The experiment (pool, how the pair is chosen, duration,
+geometry, optional trigger) comes from an :class:`~.experiment.Experiment`
+loaded from a YAML file, or the built-in default.
+
+phase: "armed" (triggered experiments, before start_run()) -> "running"
+-> "complete".
 
 This module owns the sketch (``settings`` / ``setup`` / ``draw`` /
 ``key_pressed``) and, at all times, a thread-safe snapshot of exactly what is
@@ -19,7 +22,7 @@ Run standalone, no ROS (uses the built-in default experiment):
 
 Keys while running:
     d     toggle the debug label/timer overlay (hide before a real trial)
-    n     skip to the next trial immediately
+    n     draw a fresh trial (handy for previewing stimuli)
     esc   quit
 """
 
@@ -97,7 +100,6 @@ _rt = {
     "master_seed": None,
     "noise_seed": None,
     "master_rng": None,
-    "scheduler": None,
     "trial_id": -1,
     "trial_seed": None,
     "trial_uuid": None,
@@ -177,7 +179,6 @@ def setup():
         _rt["master_seed"] = seed
         _rt["noise_seed"] = noise_seed
         _rt["master_rng"] = master_rng
-        _rt["scheduler"] = experiment.scheduler(master_rng)
         _rt["show_debug"] = _cfg["show_debug"]
         _rt["started"] = True
         _rt["phase"] = "armed" if triggered else "running"
@@ -186,7 +187,7 @@ def setup():
     if experiment.mode == "sample":
         desc = f"mode=sample pool={experiment.pool}"
     else:
-        desc = f"mode=pairs, {len(experiment.conditions)} conditions"
+        desc = f"mode=pairs ({len(experiment.pairs)} pairings)"
     print(f"[assay] experiment {experiment.name!r} ({desc}, sha1 {experiment.sha1})")
     print(f"[assay] master_seed={seed}  "
           f"(reproduce this run with configure(master_seed={seed}))")
@@ -194,7 +195,7 @@ def setup():
     if triggered:
         print("[assay] ARMED -- waiting for start_run() trigger")
     else:
-        _start_new_trial()
+        _begin_trial()
 
 
 def draw():
@@ -218,31 +219,25 @@ def draw():
         return
 
     if start_pending:
-        # a trigger arrived on another thread; build the first trial here, on
-        # the sketch thread (py5 object creation must not happen off it), then
+        # a trigger arrived on another thread; build the trial here, on the
+        # sketch thread (py5 object creation must not happen off it), then
         # render it from the next frame.
         with _lock:
             _rt["start_pending"] = False
-        _start_new_trial()
+        _begin_trial()
         return
 
     if phase == "complete" or left is None:
         if show_debug:
             py5.fill(0)
             py5.text_size(16)
-            py5.text("experiment complete", py5.width / 2, py5.height / 2)
+            py5.text("trial complete", py5.width / 2, py5.height / 2)
         return
 
     t = time.monotonic() - start_monotonic
     if t >= duration:
-        _start_new_trial()
-        t = 0.0
-        with _lock:
-            left = _rt["left"]
-            right = _rt["right"]
-            phase = _rt["phase"]
-        if phase != "running" or left is None:
-            return
+        _finish_run()          # the trial's time is up -> the run is done
+        return
 
     w, h = py5.width, py5.height
     left_c = _resolve_center("left", experiment, w, h)
@@ -284,9 +279,9 @@ def key_pressed():
             _rt["show_debug"] = not _rt["show_debug"]
     elif k == "n":
         with _lock:
-            running = _rt["phase"] == "running"
-        if running:            # only advances an in-progress run
-            _start_new_trial()
+            can = _rt["phase"] in ("running", "complete")
+        if can:                # draw a fresh trial (handy for previewing)
+            _begin_trial()
 
 
 def run(block=True):
@@ -337,9 +332,9 @@ def request_stop():
 
 
 def start_run():
-    """Trigger: leave ARMED and begin trials. No-op if already running or the
-    experiment is finished. Thread-safe -- the actual first trial is built on
-    the sketch thread next frame (py5 objects must not be created off it)."""
+    """Trigger: leave ARMED and run the (one) trial. No-op if not ARMED.
+    Thread-safe -- the trial is built on the sketch thread next frame (py5
+    objects must not be created off it)."""
     with _lock:
         if _rt["phase"] != "armed":
             return
@@ -384,23 +379,16 @@ def main():
 
 
 # --------------------------------------------------------------------------- #
-# trial transitions + state snapshot
+# the trial + state snapshot
 # --------------------------------------------------------------------------- #
-def _start_new_trial():
+def _begin_trial():
+    """Draw and build the trial (run on the sketch thread)."""
     with _lock:
         experiment = _rt["experiment"]
         master_rng = _rt["master_rng"]
-        scheduler = _rt["scheduler"]
         trial_id = _rt["trial_id"] + 1
 
-    draw = scheduler.next_trial()
-    if draw is None:
-        with _lock:
-            _rt["complete"] = True
-            _rt["phase"] = "complete"
-        print("[assay] experiment complete")
-        _notify_state()   # publish one final message before the node shuts down
-        return
+    draw = experiment.draw(master_rng)
 
     # One RNG per trial, seeded from the master stream: given the draw (which
     # stimuli, which sides), the trial's visuals replay from trial_seed alone.
@@ -430,19 +418,25 @@ def _start_new_trial():
             right_name=plan.right_name,
             trial_start_wall=now_wall,
             trial_start_monotonic=now_monotonic,
+            phase="running",
+            complete=False,
         )
 
     print(f"[assay] trial {trial_id}: {plan.condition_name}  "
           f"LEFT={plan.left_name} RIGHT={plan.right_name}  "
           f"{plan.duration_sec:.1f}s  (trial_seed={trial_seed})")
+    _notify_state()
 
-    cb = _on_trial_change
-    if cb is not None:
-        state = current_state()
-        try:
-            cb(state)
-        except Exception as exc:                       # noqa: BLE001
-            print(f"[assay] trial-change callback raised: {exc!r}")
+
+def _finish_run():
+    """The trial's time is up -- the run is done."""
+    with _lock:
+        if _rt["phase"] == "complete":
+            return
+        _rt["complete"] = True
+        _rt["phase"] = "complete"
+    print("[assay] trial complete")
+    _notify_state()   # publish one final message before the node shuts down
 
 
 def experiment_info():

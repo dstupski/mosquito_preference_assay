@@ -1,9 +1,9 @@
-# Default experiment: each trial draws TWO DISTINCT markers at random from the
-# pool (no replacement) -- one on the right, one on the left. (Same as the
-# built-in default used when no experiment_file is given.)
+# Default experiment (also the built-in default used when no experiment_file
+# is given). One trial: two DISTINCT markers drawn at random from the pool,
+# one on the right, one on the left.
 schema: mosquito_preference_assay/experiment/1
 name: two_choice_default
-description: Each trial, two distinct markers drawn at random from the pool.
+description: Two distinct markers drawn at random from the pool.
 
 # 1. STIMULUS POOL ---------------------------------------------------------
 # Named, reusable stimulus definitions. Each param is a literal OR a random
@@ -23,24 +23,19 @@ stimuli:
     params:
       period_px: 24
       speed_px_per_sec: 40
-      angle_deg: {uniform: [0, 360]}      # random orientation each trial
+      angle_deg: {uniform: [0, 360]}      # random orientation
 
   telescope:
     type: telescope
     params: {ring_spacing_px: 18, speed_px_per_sec: 50}
 
-# 2. CONDITIONS ----------------------------------------------------------
+# 2. CONDITIONS --------------------------------------------------------
 conditions:
-  mode: sample               # sample -> random draw each trial; pairs -> fixed set
+  mode: sample               # sample -> draw 2 distinct at random; pairs -> pick one from `pairs`
   # pool: [static_dark, jitter, moving_grating, telescope]   # default: all stimuli
   # weights: {moving_grating: 2, static_dark: 1}             # optional bias (default: equal)
 
-# 3. SCHEDULE ----------------------------------------------------------
-schedule:
-  max_trials: null           # integer to cap the run; null -> until Ctrl-C / window close
-  # order / loop / reshuffle_each_loop apply only to conditions.mode: pairs
-
-duration_sec: 15.0           # trial length in seconds (the single knob)
+duration_sec: 15.0           # trial length in seconds
 
 display:
   circle_diameter_px: 200
