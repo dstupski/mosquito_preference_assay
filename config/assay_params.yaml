@@ -1,0 +1,50 @@
+# Operational parameters for the mosquito_preference_assay stimulus_publisher.
+#
+# The *experiment design* (stimulus pool, conditions, schedule, durations,
+# geometry) lives in a separate experiment YAML -- see the experiments/ folder
+# and set `experiment_file` below. This file is only about how this run of the
+# node behaves on this machine.
+#
+#   ros2 launch mosquito_preference_assay assay.launch.py
+#   ros2 launch mosquito_preference_assay assay.launch.py params_file:=<path>
+#
+# "/**" applies these to the node whatever it is named.
+
+/**:
+  ros__parameters:
+
+    # Experiment definition: a bare name (resolved against the installed
+    # experiments/ folder), a path, or "" for the built-in default.
+    experiment_file: "two_choice_default"
+
+    # --- display ---------------------------------------------------------- #
+    fullscreen: false
+
+    # Which screen to play on (rig-specific, so it lives here, not in the
+    # portable experiment file):
+    #   ""      -> primary / OS default
+    #   "2"     -> monitor / projector #2 (1-indexed; fullscreen only)
+    #   "span"  -> span all displays (fullscreen only)
+    monitor: ""
+
+    # Windowed mode only: place the sketch window at "x,y" px on the virtual
+    # desktop (e.g. "1920,0" to push it onto a second monitor). "" -> default.
+    window_pos: ""
+
+    window_w: 1200
+    window_h: 800
+
+    # Optional override of the experiment's display.left/right_center_px, as
+    # "x,y" pixels. "" -> use whatever the experiment file specifies. Handy for
+    # nudging alignment to the arena without editing the experiment.
+    left_center_px: ""
+    right_center_px: ""
+
+    # --- reproducibility ------------------------------------------------- #
+    # -1 -> random seed each run (logged, and in every published message).
+    # Set a fixed >=0 integer to replay a whole session.
+    master_seed: -1
+
+    # --- publishing / debug ------------------------------------------- #
+    heartbeat_hz: 10.0
+    show_debug: true

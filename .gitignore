@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+
+# colcon / ament build artifacts (this package is cloned into a workspace's src/)
+build/
+install/
+log/
+
+# rosbags
+*.db3
+*.mcap
+rosbag2_*/
+mpa_*/
+
+# editors / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

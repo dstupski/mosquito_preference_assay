@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-22.04
+    container: ros:humble
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3-pip
+          python3 -m pip install --quiet "flake8>=6" pyflakes
+
+      - name: pyflakes (undefined names / unused imports)
+        run: python3 -m pyflakes mosquito_preference_assay/ launch/ test/
+
+      - name: flake8 (style)
+        run: >
+          python3 -m flake8 mosquito_preference_assay/ launch/
+          --max-line-length=99 --extend-ignore=E203,W503
+
+      - name: colcon build + param_spec tests
+        shell: bash
+        run: |
+          set -e
+          source /opt/ros/humble/setup.bash
+          ws="${GITHUB_WORKSPACE}/../ws"
+          mkdir -p "${ws}/src"
+          ln -s "${GITHUB_WORKSPACE}" "${ws}/src/mosquito_preference_assay"
+          cd "${ws}"
+          colcon build --packages-select mosquito_preference_assay
+          colcon test --packages-select mosquito_preference_assay --pytest-args -k test_param_spec
+          colcon test-result --verbose

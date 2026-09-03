@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mosquito_preference_assay</name>
+  <version>0.1.0</version>
+  <description>Two-choice mosquito visual preference assay (py5 / Processing) with a
+    ROS 2 node that publishes a complete JSON description of the left and right
+    stimuli at all times.</description>
+  <maintainer email="dstupski@uw.edu">David Stupski</maintainer>
+  <author email="dstupski@uw.edu">David Stupski</author>
+  <license>MIT</license>
+  <url type="repository">https://github.com/dstupski/mosquito_preference_assay</url>
+
+  <exec_depend>python3</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <!-- py5 is not available via rosdep; install it into the same Python
+       interpreter ROS uses (see README.md). -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
