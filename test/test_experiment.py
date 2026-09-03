@@ -105,3 +105,17 @@ def test_condition_references_undefined_stimulus():
     with pytest.raises(ExperimentError):
         Experiment(_doc(conditions={"mode": "pairs", "generate": "none",
                                     "explicit": [{"left": "a", "right": "zzz"}]}))
+
+
+def test_trigger_block_absent_by_default():
+    assert Experiment(_doc()).trigger_topic is None
+
+
+def test_trigger_topic_and_node_shorthand():
+    assert Experiment(_doc(trigger={"topic": "/arena/go"})).trigger_topic == "/arena/go"
+    assert Experiment(_doc(trigger={"node": "arena"})).trigger_topic == "/arena/trigger"
+
+
+def test_trigger_block_needs_topic_or_node():
+    with pytest.raises(ExperimentError):
+        Experiment(_doc(trigger={}))

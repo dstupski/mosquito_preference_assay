@@ -32,6 +32,13 @@ schedule:
 
 duration_sec: 15.0             # <-- the single knob for trial length
 
+# What fires the trial. Presence of this block makes the node open ARMED and
+# wait. Set `topic` to whatever your tracking/arena node publishes (a
+# std_msgs/Bool, true = go). `node: foo` is shorthand for topic /foo/trigger.
+# A `trigger_topic` ROS param still overrides this.
+trigger:
+  topic: /arena/mosquito_present
+
 display:
   circle_diameter_px: 200
   left_center_px: null          # null -> auto (w*0.25, h/2)

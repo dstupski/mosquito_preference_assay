@@ -27,6 +27,7 @@ setup(
     entry_points={
         "console_scripts": [
             "stimulus_publisher = mosquito_preference_assay.stimulus_publisher_node:main",
+            "test_trigger = mosquito_preference_assay.test_trigger_node:main",
             "assay = mosquito_preference_assay.assay:main",
         ],
     },

@@ -69,6 +69,7 @@ mosquito_preference_assay/
   experiment.py                load/validate the YAML, conditions, scheduler
   assay.py                     the py5 sketch + thread-safe current_state()
   stimulus_publisher_node.py   the ROS 2 node
+  test_trigger_node.py         bench helper: publish the Bool trigger on command
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random-draw default (also the built-in default)
   grating_speed_sweep.yaml      fixed pairings, random-range params, finite run
@@ -193,6 +194,12 @@ schedule:
 
 duration_sec: 15.0                    # trial length — the single knob (literal, or {uniform: [25,35]})
 
+# Optional. Its presence makes this a triggered experiment (node opens ARMED,
+# waits). Omit it for an experiment that plays immediately.
+trigger:
+  topic: /arena/mosquito_present     # a std_msgs/Bool your tracking node publishes; true = go
+  # node: arena                      # shorthand for topic: /arena/trigger
+
 display:
   circle_diameter_px: 200
   left_center_px: null               # null -> auto (w*0.25, h/2)
@@ -229,37 +236,55 @@ defined, a bad random spec, `mode: sample` with < 2 pool entries, and so on.
 
 ---
 
-## Triggered single-run capture
+## Triggering
 
-`triggered_capture.launch.py` brings up the node **ARMED** (blank screen) next
-to `ros2 bag record`. A `std_msgs/Bool` `{data: true}` on the trigger topic
-plays one trial (15 s with `single_trigger`); the node then exits, which
-emits a launch `Shutdown`, which SIGINTs the recorder so the bag is finalised
-and closed.
+The node opens **ARMED** (blank screen) whenever the experiment file has a
+`trigger:` block (or `-p start_mode:=triggered`). It then waits for a
+`std_msgs/Bool` on the trigger topic: **`true` = start the run**, `false` =
+abort back to ARMED.
+
+**Which topic:** the experiment file's `trigger.topic` (or `trigger.node` →
+`/<node>/trigger`); the `trigger_topic` ROS param overrides it. The resolved
+topic is recorded in `~/experiment_info`.
+
+**Firing it by hand / on the bench** — `test_trigger` node:
+
+```bash
+ros2 run mosquito_preference_assay test_trigger \
+    --ros-args -p topic:=/arena/mosquito_present
+# then: [Enter] fires · a[Enter] aborts · q[Enter] quits
+
+# or timed (for scripts / launch):
+ros2 run mosquito_preference_assay test_trigger --ros-args \
+    -p topic:=/arena/mosquito_present -p mode:=timer -p delay_sec:=3.0
+```
+
+or just `ros2 topic pub --once /arena/mosquito_present std_msgs/msg/Bool "{data: true}"`.
+
+### Single-run capture
+
+`triggered_capture.launch.py` brings the node up ARMED next to `ros2 bag
+record`. The trigger plays one trial (15 s with `single_trigger`), then the
+node exits, which emits a launch `Shutdown` — SIGINT to the recorder, bag
+finalised. One launch = one animal = one bag. Re-arm for the next = relaunch.
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_capture.launch.py
-
-# from your trigger source, or by hand:
-ros2 topic pub --once /stimulus_publisher/trigger std_msgs/msg/Bool "{data: true}"
 ```
 
 | Launch arg | Default | |
 |---|---|---|
 | `experiment_file` | `single_trigger` | name or path |
-| `trigger_topic` | `/stimulus_publisher/trigger` | |
+| `trigger_topic` | `""` | override the experiment's `trigger:` topic |
 | `bag_dir` | `./mpa_<timestamp>` | output dir (must not already exist) |
-| `record_all` | `true` | `true` → `ros2 bag record -a`; `false` → assay + trigger topics only |
+| `record_all` | `true` | `true` → `ros2 bag record -a` (captures cameras / trigger too); `false` → assay topics only |
 | `fullscreen` / `monitor` / `master_seed` | | passed to the node |
 
 The node's `exit_grace_sec` (default 2 s) keeps it alive briefly after the
 trial so the trailing `phase: "complete"` messages land in the bag.
 
-To wait for a trigger *without* the bag/launch machinery:
-`-p start_mode:=triggered -p trigger_topic:=/your/topic`. The trigger is
-`std_msgs/Bool` (`true` = start, `false` = abort to ARMED) — if your source
-uses a different type, change the subscription in `stimulus_publisher_node.py`
-(`_on_trigger`).
+The trigger is `std_msgs/Bool` — if your source uses a different type, change
+the subscription in `stimulus_publisher_node.py` (`_on_trigger`).
 
 ---
 

@@ -193,6 +193,22 @@ class Experiment:
             disp.get("right_center_px"), "display.right_center_px")
         self.background_gray = int(disp.get("background_gray", 128))
 
+        # Optional: what fires the trial. Its presence means this is a triggered
+        # experiment (the node opens ARMED). A ROS param still overrides.
+        #   trigger: {topic: /arena_tracking/mosquito_detected}
+        #   trigger: {node: arena_tracking}     # -> /arena_tracking/trigger
+        self.trigger_topic = None
+        trig = doc.get("trigger")
+        if trig is not None:
+            if not isinstance(trig, dict):
+                raise ExperimentError("trigger: must be a mapping with `topic` or `node`")
+            if trig.get("topic"):
+                self.trigger_topic = str(trig["topic"])
+            elif trig.get("node"):
+                self.trigger_topic = f"/{str(trig['node']).strip('/')}/trigger"
+            else:
+                raise ExperimentError("trigger: needs a `topic` or a `node`")
+
     def _parse_stimuli(self, raw):
         if not raw:
             raise ExperimentError("experiment defines no `stimuli`")
@@ -325,6 +341,7 @@ class Experiment:
             "duration_sec": self.duration_spec,
             "circle_diameter_px": self.circle_diameter_px,
             "max_trials": self.max_trials,
+            "trigger_topic": self.trigger_topic,
         }
         if self.mode == "sample":
             out["weights"] = self.weights

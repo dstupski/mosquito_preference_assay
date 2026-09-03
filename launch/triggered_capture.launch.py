@@ -48,7 +48,8 @@ _DEFAULT_BAG = os.path.join(
 def generate_launch_description():
     args = [
         DeclareLaunchArgument("experiment_file", default_value="single_trigger"),
-        DeclareLaunchArgument("trigger_topic", default_value="/stimulus_publisher/trigger"),
+        # "" -> use the experiment file's `trigger:` topic
+        DeclareLaunchArgument("trigger_topic", default_value=""),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),
         DeclareLaunchArgument("record_all", default_value="true"),
         DeclareLaunchArgument("fullscreen", default_value="false"),
@@ -82,13 +83,15 @@ def generate_launch_description():
         cmd=["ros2", "bag", "record", "-a", "-o", bag_dir],
         output="screen",
     )
+    # record_all:=false -> just the assay topics. The trigger topic comes from
+    # the experiment file (unknown to launch here); pass record_all:=true (the
+    # default, -a) to capture it and the camera / tracking nodes too.
     bag_selected = ExecuteProcess(
         condition=UnlessCondition(LaunchConfiguration("record_all")),
         cmd=["ros2", "bag", "record", "-o", bag_dir,
              "/stimulus_publisher/experiment_info",
              "/stimulus_publisher/stimulus_state",
-             "/stimulus_publisher/trial_start",
-             trigger_topic],
+             "/stimulus_publisher/trial_start"],
         output="screen",
     )
 

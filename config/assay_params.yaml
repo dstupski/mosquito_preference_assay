@@ -40,8 +40,17 @@
     left_center_px: ""
     right_center_px: ""
 
+    # --- triggering ---------------------------------------------------- #
+    # "" -> derive from the experiment file: a `trigger:` block means open
+    # ARMED and wait; no block means play immediately. Force with
+    # "auto" / "triggered".
+    start_mode: ""
+    # "" -> use the experiment's `trigger:` topic (or ~/trigger). Set here to
+    # override which node/topic fires the trial. std_msgs/Bool, true = go.
+    trigger_topic: ""
+
     # --- reproducibility ------------------------------------------------- #
-    # -1 -> random seed each run (logged, and in every published message).
+    # -1 -> random seed each run (logged, and published on ~/experiment_info).
     # Set a fixed >=0 integer to replay a whole session.
     master_seed: -1
 

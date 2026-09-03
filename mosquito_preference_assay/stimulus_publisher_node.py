@@ -26,8 +26,11 @@ What is shown -- the stimulus pool, the pairings, the ordering and the timing
 the `experiment_file` parameter. The rest of the parameters are operational:
 
     experiment_file     string  ""    experiment name / path; "" -> built-in default
-    start_mode          string  auto  auto -> play immediately; triggered -> wait for a trigger
-    trigger_topic       string ~/trigger   std_msgs/Bool: true = start run, false = abort
+    start_mode          string  ""    "" -> derive from the experiment's `trigger:` block
+                                      (present -> triggered, absent -> auto); or force
+                                      "auto" / "triggered"
+    trigger_topic       string  ""    "" -> the experiment's `trigger:` topic, else
+                                      ~/trigger. std_msgs/Bool: true = start, false = abort
     master_seed         int     -1    -1 -> random seed (logged, in experiment_info)
     fullscreen          bool    False  True for the mosquito-facing display
     monitor             string  ""    "" -> primary; "2" -> that display; "span" -> all
@@ -128,8 +131,8 @@ class StimulusPublisher(Node):
         left_center_px = _center_param(self, "left_center_px")
         right_center_px = _center_param(self, "right_center_px")
         window_pos = _center_param(self, "window_pos")
-        start_mode = str(self.declare_parameter("start_mode", "auto").value).strip()
-        trigger_topic = str(self.declare_parameter("trigger_topic", "~/trigger").value)
+        start_mode = str(self.declare_parameter("start_mode", "").value).strip()
+        trigger_topic = str(self.declare_parameter("trigger_topic", "").value).strip()
 
         # Resolve the seed to a concrete value now, so ~/experiment_info can
         # carry it before the sketch thread runs setup().
@@ -150,9 +153,17 @@ class StimulusPublisher(Node):
             f"(sha1 {experiment.sha1}, {how})"
         )
 
+        # start_mode: explicit param wins; otherwise derive from the experiment
+        # (a `trigger:` block -> triggered, else auto).
         if start_mode not in ("auto", "triggered"):
-            self.get_logger().warn(f"start_mode {start_mode!r} invalid; using 'auto'")
-            start_mode = "auto"
+            if start_mode:
+                self.get_logger().warn(f"start_mode {start_mode!r} invalid; deriving")
+            start_mode = "triggered" if experiment.trigger_topic else "auto"
+
+        # trigger_topic: explicit param wins; else the experiment's `trigger:`;
+        # else the node-private ~/trigger.
+        if not trigger_topic:
+            trigger_topic = experiment.trigger_topic or "~/trigger"
 
         assay.configure(
             experiment=experiment,
