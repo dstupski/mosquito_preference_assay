@@ -49,14 +49,15 @@ instances* of them:
 | `moving_grating` | Black/white stripes drifting across the circle (optomotor-style) |
 | `telescope` | Concentric rings expanding outward — tunnel effect |
 
-The **ROS node** (`stimulus_publisher`) runs the sketch and publishes the
-current state on `~/stimulus_state` (continuously) and `~/trial_start` (per
-trial). It can start playing immediately (`start_mode: auto`) or wait ARMED for
-a trigger message (`start_mode: triggered`).
+The **ROS node** (`stimulus_publisher`) runs the sketch and publishes: the
+static run metadata once on `~/experiment_info`, and the current trial on
+`~/stimulus_state` (continuously) + `~/trial_start` (per trial). It can start
+playing immediately (`start_mode: auto`) or wait ARMED for a trigger message
+(`start_mode: triggered`).
 
 **Reproducibility:** one integer `master_seed` replays the whole run (every
-draw, every side, every parameter); it is logged at startup and included in
-every message.
+draw, every side, every parameter); it is logged at startup and published in
+`~/experiment_info`.
 
 ### Repository layout
 
@@ -71,7 +72,7 @@ mosquito_preference_assay/
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random-draw default (also the built-in default)
   grating_speed_sweep.yaml      fixed pairings, random-range params, finite run
-  single_trigger_15s.yaml       one 15 s trial per trigger
+  single_trigger.yaml           one triggered 15 s trial, then everything concludes
 config/assay_params.yaml       operational ROS params
 launch/
   assay.launch.py               node + params file
@@ -232,7 +233,7 @@ defined, a bad random spec, `mode: sample` with < 2 pool entries, and so on.
 
 `triggered_capture.launch.py` brings up the node **ARMED** (blank screen) next
 to `ros2 bag record`. A `std_msgs/Bool` `{data: true}` on the trigger topic
-plays one trial (15 s with `single_trigger_15s`); the node then exits, which
+plays one trial (15 s with `single_trigger`); the node then exits, which
 emits a launch `Shutdown`, which SIGINTs the recorder so the bag is finalised
 and closed.
 
@@ -245,7 +246,7 @@ ros2 topic pub --once /stimulus_publisher/trigger std_msgs/msg/Bool "{data: true
 
 | Launch arg | Default | |
 |---|---|---|
-| `experiment_file` | `single_trigger_15s` | name or path |
+| `experiment_file` | `single_trigger` | name or path |
 | `trigger_topic` | `/stimulus_publisher/trigger` | |
 | `bag_dir` | `./mpa_<timestamp>` | output dir (must not already exist) |
 | `record_all` | `true` | `true` → `ros2 bag record -a`; `false` → assay + trigger topics only |
