@@ -13,9 +13,10 @@ message, then exits. The node exiting emits a launch Shutdown, which SIGINTs
     ros2 topic pub --once /stimulus_publisher/trigger std_msgs/msg/Bool "{data: true}"
 
 Arguments
-    experiment_file  single_trigger   experiment name or path
-    trigger_topic    /stimulus_publisher/trigger
-    bag_dir          <cwd>/mpa_<timestamp>   output dir (must not already exist)
+    experiment_file    single_trigger   experiment name or path
+    trigger_topic      ""    override the experiment's `trigger:` topic
+    trigger_msg_type   ""    override the experiment's `trigger.msg_type` (bool | string)
+    bag_dir            <cwd>/mpa_<timestamp>   output dir (must not already exist)
     record_all       true    true -> `ros2 bag record -a`; false -> assay topics + trigger only
     fullscreen       false
     monitor          ""      "" primary | "2" that display | "span"
@@ -48,8 +49,9 @@ _DEFAULT_BAG = os.path.join(
 def generate_launch_description():
     args = [
         DeclareLaunchArgument("experiment_file", default_value="single_trigger"),
-        # "" -> use the experiment file's `trigger:` topic
+        # "" -> use the experiment file's `trigger:` topic / msg_type
         DeclareLaunchArgument("trigger_topic", default_value=""),
+        DeclareLaunchArgument("trigger_msg_type", default_value=""),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),
         DeclareLaunchArgument("record_all", default_value="true"),
         DeclareLaunchArgument("fullscreen", default_value="false"),
@@ -70,6 +72,8 @@ def generate_launch_description():
                 LaunchConfiguration("experiment_file"), value_type=str),
             "start_mode": "triggered",
             "trigger_topic": ParameterValue(trigger_topic, value_type=str),
+            "trigger_msg_type": ParameterValue(
+                LaunchConfiguration("trigger_msg_type"), value_type=str),
             "fullscreen": ParameterValue(
                 LaunchConfiguration("fullscreen"), value_type=bool),
             "monitor": ParameterValue(LaunchConfiguration("monitor"), value_type=str),

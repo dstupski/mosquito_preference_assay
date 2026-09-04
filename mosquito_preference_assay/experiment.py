@@ -176,10 +176,15 @@ class Experiment:
         self.background_gray = int(disp.get("background_gray", 128))
 
         # Optional: what fires the trial. Its presence means this is a triggered
-        # experiment (the node opens ARMED). A ROS param still overrides.
+        # experiment (the node opens ARMED). ROS params still override.
         #   trigger: {topic: /arena/mosquito_present}
-        #   trigger: {node: arena}     # -> /arena/trigger
+        #   trigger: {node: arena}                    # -> /arena/trigger
+        #   trigger: {topic: /arena/mosquito_present, msg_type: string}
+        # msg_type: bool (default) -> std_msgs/Bool, true=start/false=abort.
+        #           string -> std_msgs/String (e.g. mosquito_detector's
+        #           detection-event JSON); any message received = start.
         self.trigger_topic = None
+        self.trigger_msg_type = "bool"
         trig = doc.get("trigger")
         if trig is not None:
             if not isinstance(trig, dict):
@@ -190,6 +195,9 @@ class Experiment:
                 self.trigger_topic = f"/{str(trig['node']).strip('/')}/trigger"
             else:
                 raise ExperimentError("trigger: needs a `topic` or a `node`")
+            self.trigger_msg_type = trig.get("msg_type", "bool")
+            if self.trigger_msg_type not in ("bool", "string"):
+                raise ExperimentError("trigger.msg_type must be bool | string")
 
     def _parse_stimuli(self, raw):
         if not raw:
@@ -314,6 +322,7 @@ class Experiment:
             "duration_sec": self.duration_spec,
             "circle_diameter_px": self.circle_diameter_px,
             "trigger_topic": self.trigger_topic,
+            "trigger_msg_type": self.trigger_msg_type,
         }
         if self.mode == "sample":
             out["weights"] = self.weights

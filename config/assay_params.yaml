@@ -46,8 +46,13 @@
     # "auto" / "triggered".
     start_mode: ""
     # "" -> use the experiment's `trigger:` topic (or ~/trigger). Set here to
-    # override which node/topic fires the trial. std_msgs/Bool, true = go.
+    # override which node/topic fires the trial.
     trigger_topic: ""
+    # "" -> use the experiment's `trigger.msg_type` (or "bool").
+    #   bool   -> std_msgs/Bool, true = start, false = abort (test_trigger)
+    #   string -> std_msgs/String, any message = start (mosquito_detector_node's
+    #             detection-event JSON doubles as the trigger)
+    trigger_msg_type: ""
 
     # --- reproducibility ------------------------------------------------- #
     # -1 -> random seed each run (logged, and published on ~/experiment_info).

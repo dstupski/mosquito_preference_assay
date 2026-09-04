@@ -20,6 +20,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [Quick start](#quick-start)
 - [Writing an experiment](#writing-an-experiment)
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
+- [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher)
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a run offline](#reproducing-a-run-offline)
@@ -71,6 +72,10 @@ mosquito_preference_assay/
   assay.py                     the py5 sketch + thread-safe current_state()
   stimulus_publisher_node.py   the ROS 2 node
   test_trigger_node.py         bench helper: publish the Bool trigger on command
+  detection.py                 background-subtraction blob detection (ported
+                                from test_videos_particle_tracking)
+  mosquito_detector_node.py    watches a camera feed, publishes detection events
+  video_publisher_node.py      plays a video / frame directory as a pseudo camera feed
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
@@ -94,6 +99,7 @@ test/                          unit + lint tests
 | **numpy** | **< 2** | `pip install --user "numpy<2"` | py5 pulls numpy 2, which is ABI-incompatible with the apt `python3-matplotlib` (harmless `_ARRAY_API not found` spam otherwise). py5 runs fine on 1.26. |
 | **Java** | 17 | Processing 4 bundle, or `py5-install-jdk` | py5 needs a Java 17 JVM. `assay.py` auto-sets `JAVA_HOME` if it's unset and can find one (see below). |
 | a display | — | — | this is a windowed/fullscreen sketch; there is no headless mode |
+| **cv_bridge**, **OpenCV** | any | apt (`ros-humble-cv-bridge`, part of `ros-humble-desktop`) | `mosquito_detector_node` / `video_publisher_node` only — not needed to run the assay itself |
 
 **`JAVA_HOME`** — on import, `assay.py` sets it (if unset) to the first of:
 `~/Applications/Processing/lib/app/resources/jdk`, or a JDK under
@@ -227,13 +233,19 @@ with no `pairs:` list, and so on.
 ## Triggering
 
 The node opens **ARMED** (blank screen) whenever the experiment file has a
-`trigger:` block (or `-p start_mode:=triggered`). It then waits for a
-`std_msgs/Bool` on the trigger topic: **`true` = start the run**, `false` =
-abort back to ARMED.
+`trigger:` block (or `-p start_mode:=triggered`). It then waits on the trigger
+topic for either:
 
-**Which topic:** the experiment file's `trigger.topic` (or `trigger.node` →
-`/<node>/trigger`); the `trigger_topic` ROS param overrides it. The resolved
-topic is recorded in `~/experiment_info`.
+- **`std_msgs/Bool`** (default) — `true` starts the run, `false` aborts back
+  to ARMED. What `test_trigger` (below) speaks.
+- **`std_msgs/String`** (`trigger.msg_type: string`) — any message received
+  starts the run (no abort). What `mosquito_detector_node` (below) speaks —
+  its detection-event JSON doubles as the trigger, so the same message both
+  fires the trial and gets recorded.
+
+**Which topic / type:** the experiment file's `trigger.topic` / `trigger.msg_type`
+(or `trigger.node` → `/<node>/trigger`); the `trigger_topic` / `trigger_msg_type`
+ROS params override them. Both are recorded in `~/experiment_info`.
 
 ### `test_trigger` — fire the trigger on command
 
@@ -277,6 +289,7 @@ ros2 launch mosquito_preference_assay triggered_capture.launch.py
 |---|---|---|
 | `experiment_file` | `single_trigger` | name or path |
 | `trigger_topic` | `""` | override the experiment's `trigger:` topic |
+| `trigger_msg_type` | `""` | override the experiment's `trigger.msg_type` (`bool` \| `string`) |
 | `bag_dir` | `./mpa_<timestamp>` | output dir (must not already exist) |
 | `record_all` | `true` | `true` → `ros2 bag record -a` (captures cameras / trigger too); `false` → assay topics only |
 | `fullscreen` / `monitor` / `master_seed` | | passed to the node |
@@ -284,8 +297,93 @@ ros2 launch mosquito_preference_assay triggered_capture.launch.py
 The node's `exit_grace_sec` (default 2 s) keeps it alive briefly after the
 trial so the trailing `phase: "complete"` messages land in the bag.
 
-The trigger is `std_msgs/Bool` — if your source uses a different type, change
-the subscription in `stimulus_publisher_node.py` (`_on_trigger`).
+---
+
+## Detecting a mosquito
+
+`mosquito_detector_node` watches a camera feed, and when something
+mosquito-sized moves into a region, publishes a detection-event message —
+which (via `trigger.msg_type: string`, above) is also what arms the trial.
+
+**Algorithm:** background subtraction against a static reference frame
+(captured once, from the first image received), restricted to `roi`,
+blob-area filtered — the same approach and parameter names as
+[`test_videos_particle_tracking`](../test_videos_particle_tracking)'s
+`detection.py` (ported into `detection.py` here so this package stays
+self-contained; frame-to-frame track linking isn't needed for a live
+trigger). A detection fires once `consecutive_frames` frames in a row have a
+qualifying blob, at most once per `cooldown_sec`.
+
+```bash
+ros2 run mosquito_preference_assay mosquito_detector --ros-args \
+    -p image_topic:=/camera/image_raw -p roi:=340,40,1260,1070 \
+    -p topic:=/arena/mosquito_present
+```
+
+| Param | Default | Meaning |
+|---|---|---|
+| `image_topic` | `/camera/image_raw` | `sensor_msgs/Image` input |
+| `image_qos` | `reliable` | `reliable` or `sensor_data` (best-effort — matches most camera drivers) |
+| `topic` | `/arena/mosquito_present` | detection-event output (`std_msgs/String` JSON) |
+| `roi` | `""` | `"x0,y0,x1,y1"` px, exclusive; `""` = whole frame |
+| `diff_threshold` | `25` | pixel intensity diff vs. background to count as foreground |
+| `min_area_px` / `max_area_px` | `4.0` / `5000.0` | blob area bounds (rejects noise speckle and large intruders) |
+| `morph_kernel` | `3` | open/close kernel size (px) cleaning up the mask |
+| `consecutive_frames` | `3` | frames with a qualifying blob required before firing |
+| `cooldown_sec` | `10.0` | minimum gap between fired events |
+| `publish_debug_image` | `false` | also publish an annotated `~/debug_image` (ROI + detected box) for tuning — e.g. `ros2 run rqt_image_view rqt_image_view` |
+
+Tuning a new rig: start with `roi` empty and `publish_debug_image:=true`,
+watch `~/debug_image`, and narrow `roi` to exclude anything static that isn't
+the arena (equipment, lights, reflections) — see `find_candidates()` picking
+the *largest* blob, so a static bright spot outside the ROI can otherwise win
+over the mosquito.
+
+### JSON schema `mosquito_preference_assay/detection_event/1`
+
+```json
+{"schema":"mosquito_preference_assay/detection_event/1","stamp_wall":1788555546.93,
+ "event":"mosquito_detected","position_px":[386.18,550.40],"bbox_px":[371,538,30,25],
+ "area_px":92.0,"consecutive_frames":2,"roi_px":[340,40,1260,1070],
+ "image_topic":"/camera/image_raw","frame_stamp":1788555546.83}
+```
+(A real detection, from the arena footage under `test_videos_particle_tracking/data/raw/`.)
+
+### Testing without a camera: `video_publisher`
+
+Plays a video file, or a directory of frame images, as a pseudo camera feed —
+so the whole pipeline (`video_publisher` → `mosquito_detector` →
+`stimulus_publisher`) runs on real or recorded footage with no hardware.
+
+```bash
+# a directory of frames, e.g. a real session from test_videos_particle_tracking:
+ros2 run mosquito_preference_assay video_publisher --ros-args \
+    -p source:=/path/to/test_videos_particle_tracking/data/raw/<session>/cam_a \
+    -p topic:=/camera/image_raw -p rate_hz:=30 -p loop:=false
+
+# a video file:
+ros2 run mosquito_preference_assay video_publisher --ros-args \
+    -p source:=/path/to/clip.mp4 -p rate_hz:=20 -p loop:=true
+```
+
+| Param | Default | Meaning |
+|---|---|---|
+| `source` | *(required)* | video file path, or a directory of `.bmp`/`.png`/`.jpg` frames (sorted by filename) |
+| `topic` | `/camera/image_raw` | |
+| `rate_hz` | `20.0` | |
+| `loop` | `true` | restart from the beginning when the source runs out |
+| `frame_id` | `camera` | image `header.frame_id` |
+
+Full pipeline, end to end, on real footage:
+
+```bash
+ros2 run mosquito_preference_assay video_publisher --ros-args \
+    -p source:=.../data/raw/<session>/cam_a -p rate_hz:=30 -p loop:=false &
+ros2 run mosquito_preference_assay mosquito_detector --ros-args \
+    -p roi:=340,40,1260,1070 &
+ros2 launch mosquito_preference_assay triggered_capture.launch.py \
+    trigger_topic:=/arena/mosquito_present trigger_msg_type:=string
+```
 
 ---
 
@@ -298,8 +396,9 @@ or a `params_file`.
 | Param | Default | Notes |
 |---|---|---|
 | `experiment_file` | `"two_choice_default"` | name (→ `experiments/`), path, or `""` for the built-in default |
-| `start_mode` | `"auto"` | `"auto"` play immediately · `"triggered"` open ARMED |
-| `trigger_topic` | `"~/trigger"` | `std_msgs/Bool` — `true` start, `false` abort |
+| `start_mode` | `""` | `""` derive from the experiment's `trigger:` block · `"auto"` play immediately · `"triggered"` open ARMED |
+| `trigger_topic` | `""` | `""` use the experiment's `trigger.topic`, else `~/trigger` |
+| `trigger_msg_type` | `""` | `""` use the experiment's `trigger.msg_type`, else `bool`. `bool` = `std_msgs/Bool` (true start, false abort); `string` = `std_msgs/String` (any message starts) |
 | `master_seed` | `-1` | `-1` → random (logged + in `experiment_info`); `≥0` → reproducible |
 | `fullscreen` | `false` | `true` for the mosquito-facing display |
 | `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. |
@@ -431,7 +530,8 @@ and resolved params directly, and each animation phase is closed-form in
 ## Development
 
 ```bash
-# unit tests (param_spec is pure; experiment needs py5 + a JDK on PATH/JAVA_HOME)
+# unit tests (param_spec/detection are pure; experiment needs py5 + a JDK on
+# PATH/JAVA_HOME; detection needs opencv)
 cd ~/ros2_ws/src/mosquito_preference_assay
 python3 -m pytest test/
 

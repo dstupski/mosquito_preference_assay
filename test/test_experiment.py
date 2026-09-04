@@ -121,6 +121,18 @@ def test_trigger_topic_and_node_shorthand():
     assert Experiment(_doc(trigger={"node": "arena"})).trigger_topic == "/arena/trigger"
 
 
+def test_trigger_msg_type_defaults_bool_and_can_be_string():
+    assert Experiment(_doc(trigger={"topic": "/go"})).trigger_msg_type == "bool"
+    e = Experiment(_doc(trigger={"topic": "/go", "msg_type": "string"}))
+    assert e.trigger_msg_type == "string"
+    assert e.summary()["trigger_msg_type"] == "string"
+
+
+def test_trigger_msg_type_rejects_bad_value():
+    with pytest.raises(ExperimentError):
+        Experiment(_doc(trigger={"topic": "/go", "msg_type": "int32"}))
+
+
 def test_trigger_block_needs_topic_or_node():
     with pytest.raises(ExperimentError):
         Experiment(_doc(trigger={}))

@@ -29,8 +29,10 @@ the `experiment_file` parameter. The rest of the parameters are operational:
     start_mode          string  ""    "" -> derive from the experiment's `trigger:` block
                                       (present -> triggered, absent -> auto); or force
                                       "auto" / "triggered"
-    trigger_topic       string  ""    "" -> the experiment's `trigger:` topic, else
-                                      ~/trigger. std_msgs/Bool: true = start, false = abort
+    trigger_topic       string  ""    "" -> the experiment's `trigger:` topic, else ~/trigger
+    trigger_msg_type    string  ""    "" -> the experiment's; else bool. bool: std_msgs/Bool
+                                      (true=start, false=abort). string: std_msgs/String, any
+                                      message = start (e.g. mosquito_detector's detection event)
     master_seed         int     -1    -1 -> random seed (logged, in experiment_info)
     fullscreen          bool    False  True for the mosquito-facing display
     monitor             string  ""    "" -> primary; "2" -> that display; "span" -> all
@@ -49,6 +51,7 @@ Run:
     ros2 bag record /stimulus_publisher/stimulus_state /stimulus_publisher/trial_start
 """
 
+import json
 import os
 import sys
 
@@ -133,6 +136,8 @@ class StimulusPublisher(Node):
         window_pos = _center_param(self, "window_pos")
         start_mode = str(self.declare_parameter("start_mode", "").value).strip()
         trigger_topic = str(self.declare_parameter("trigger_topic", "").value).strip()
+        trigger_msg_type = str(
+            self.declare_parameter("trigger_msg_type", "").value).strip().lower()
 
         # Resolve the seed to a concrete value now, so ~/experiment_info can
         # carry it before the sketch thread runs setup().
@@ -164,6 +169,12 @@ class StimulusPublisher(Node):
         # else the node-private ~/trigger.
         if not trigger_topic:
             trigger_topic = experiment.trigger_topic or "~/trigger"
+
+        # trigger_msg_type: explicit param wins; else the experiment's; else bool.
+        if trigger_msg_type not in ("bool", "string"):
+            if trigger_msg_type:
+                self.get_logger().warn(f"trigger_msg_type {trigger_msg_type!r} invalid; deriving")
+            trigger_msg_type = experiment.trigger_msg_type
 
         assay.configure(
             experiment=experiment,
@@ -209,26 +220,44 @@ class StimulusPublisher(Node):
         self._watchdog = self.create_timer(0.25, self._check_sketch)
 
         if start_mode == "triggered":
-            self._trigger_sub = self.create_subscription(
-                Bool, trigger_topic, self._on_trigger, 10
-            )
+            if trigger_msg_type == "string":
+                self._trigger_sub = self.create_subscription(
+                    String, trigger_topic, self._on_trigger_string, 10
+                )
+                kind = "std_msgs/String (any message = start; e.g. mosquito_detector)"
+            else:
+                self._trigger_sub = self.create_subscription(
+                    Bool, trigger_topic, self._on_trigger_bool, 10
+                )
+                kind = "std_msgs/Bool (true = start, false = abort)"
             self.get_logger().info(
-                f"start_mode=triggered: ARMED, waiting for Bool(true) on "
+                f"start_mode=triggered: ARMED, waiting for {kind} on "
                 f"'{self._trigger_sub.topic_name}'"
             )
 
         self.get_logger().info("stimulus_publisher up; starting sketch...")
 
-    def _on_trigger(self, msg):
-        """std_msgs/Bool on the trigger topic: true -> begin the run,
-        false -> abort back to ARMED. Swap the msg type here if your trigger
-        source uses something else."""
+    def _on_trigger_bool(self, msg):
+        """std_msgs/Bool: true -> begin the run, false -> abort to ARMED."""
         if msg.data:
             self.get_logger().info("trigger received -> starting run")
             assay.start_run()
         else:
             self.get_logger().info("trigger false -> aborting run")
             assay.abort_run()
+
+    def _on_trigger_string(self, msg):
+        """std_msgs/String: any message = a detection/trigger event = start
+        the run. If it's JSON (e.g. mosquito_detector's output), log a short
+        summary; the raw message is what actually gets recorded in the bag."""
+        summary = msg.data
+        try:
+            event = json.loads(msg.data)
+            summary = f"{event.get('event', '?')} at {event.get('position_px', '?')}"
+        except (json.JSONDecodeError, TypeError):
+            pass
+        self.get_logger().info(f"trigger received ({summary}) -> starting run")
+        assay.start_run()
 
     def _check_sketch(self):
         """Flag the main loop to exit when the run is over -- experiment

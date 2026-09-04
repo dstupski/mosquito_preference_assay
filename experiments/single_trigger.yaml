@@ -29,11 +29,18 @@ conditions:
 
 duration_sec: 15.0             # <-- the single knob for trial length
 
-# What fires the trial. Set `topic` to whatever your tracking / arena node
-# publishes (a std_msgs/Bool, true = go). `node: foo` is shorthand for
-# topic /foo/trigger. A `trigger_topic` ROS param still overrides this.
+# What fires the trial. `topic` matches what mosquito_detector_node publishes
+# to by default (see README "Detecting a mosquito"), and what test_trigger
+# defaults to for bench testing. `node: foo` is shorthand for topic
+# /foo/trigger. `trigger_topic` / `trigger_msg_type` ROS params still
+# override these.
 trigger:
   topic: /arena/mosquito_present
+  # msg_type: bool (default) -- test_trigger / a plain std_msgs/Bool source.
+  # For the real camera pipeline (mosquito_detector_node's detection-event
+  # JSON, any message = go), either uncomment the line below or launch with
+  # -p trigger_msg_type:=string -- no file edit needed.
+  # msg_type: string
 
 display:
   circle_diameter_px: 200
