@@ -16,8 +16,9 @@ import cv2
 import numpy as np
 
 
-def find_candidates(gray, background, *, diff_threshold, min_area, max_area,
-                     morph_kernel, roi=None):
+def find_candidates(
+    gray, background, *, diff_threshold, min_area, max_area, morph_kernel, roi=None,
+):
     """Return every foreground blob with area in [min_area, max_area], largest
     first, as dicts {cx, cy, area, bbox} (bbox = (x, y, w, h)).
 
