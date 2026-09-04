@@ -374,6 +374,17 @@ ros2 run mosquito_preference_assay video_publisher --ros-args \
 | `loop` | `true` | restart from the beginning when the source runs out |
 | `frame_id` | `camera` | image `header.frame_id` |
 
+**`rate_hz` is a target, not a guarantee** — each tick decodes a full frame
+off disk, so on a large source (e.g. 1440×1080 `.bmp`) the achieved rate can
+top out below the request; check with `ros2 topic hz /camera/image_raw`.
+Tested requesting `140.0` (to emulate the real rig's frame rate) against the
+`cam_a` session above: it settled around **~125 Hz**, not 140 — a limit of
+this disk-decode-per-tick test tool, not of `mosquito_detector` or a real
+camera driver (which hands off frames already in memory). The detector still
+fired correctly at that rate; which frame index it lands on to fire can shift
+between runs since `consecutive_frames` debounces against however fast frames
+are actually arriving.
+
 Full pipeline, end to end, on real footage:
 
 ```bash
