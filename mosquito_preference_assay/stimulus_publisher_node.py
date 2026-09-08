@@ -80,7 +80,7 @@ PACKAGE = "mosquito_preference_assay"
 
 
 def _center_param(node, name):
-    """Read a marker-centre override given as the string "x,y" (pixels).
+    """Read a marker-center override given as the string "x,y" (pixels).
     Empty -> None (use the experiment's display.*_center_px)."""
     raw = str(node.declare_parameter(name, "").value).strip()
     if not raw:

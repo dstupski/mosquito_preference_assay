@@ -1,4 +1,4 @@
-"""The marker types -- the visual "behaviours" a stimulus can have. Each is a
+"""The marker types -- the visual "behaviors" a stimulus can have. Each is a
 plain circle; what varies is what happens inside it.
 
 Every Stimulus:
@@ -11,7 +11,7 @@ Every Stimulus:
 * implements ``describe()`` -> a plain JSON dict that *completely* specifies
   it (type + resolved params + a uuid), which is what the ROS node publishes.
 
-To add a new marker behaviour: subclass Stimulus here, then register it in
+To add a new marker behavior: subclass Stimulus here, then register it in
 STIMULUS_TYPES in stimulus_types.py. The experiment YAML can then compose
 instances of it.
 """

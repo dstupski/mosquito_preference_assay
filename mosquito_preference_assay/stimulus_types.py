@@ -1,4 +1,4 @@
-"""Registry of stimulus *types* (the visual behaviours defined in stimuli.py).
+"""Registry of stimulus *types* (the visual behaviors defined in stimuli.py).
 
 An experiment YAML composes named *instances* of these types; this module just
 maps a ``type`` string to its class and builds one from a resolved params dict.

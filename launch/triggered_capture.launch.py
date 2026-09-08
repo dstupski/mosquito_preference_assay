@@ -5,7 +5,7 @@ The node opens ARMED (blank screen). When a `std_msgs/Bool` with `data: true`
 arrives on the trigger topic it plays one trial (15 s with the default
 `single_trigger` experiment), publishes a final `phase: "complete"`
 message, then exits. The node exiting emits a launch Shutdown, which SIGINTs
-`ros2 bag record` so the bag is finalised (`metadata.yaml` written) and closed.
+`ros2 bag record` so the bag is finalized (`metadata.yaml` written) and closed.
 
     ros2 launch mosquito_preference_assay triggered_capture.launch.py
 

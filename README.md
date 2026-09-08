@@ -24,7 +24,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a run offline](#reproducing-a-run-offline)
-- [Adding a new marker behaviour](#adding-a-new-marker-behaviour)
+- [Adding a new marker behavior](#adding-a-new-marker-behavior)
 - [Development](#development)
 - [License & citing](#license--citing)
 
@@ -36,14 +36,14 @@ graphics; ROS 2 Humble for the plumbing.
 
 | Layer | Where | What it does |
 |---|---|---|
-| **Stimulus pool** | `stimuli:` | Named, reusable stimulus definitions — a `type` (one of the built-in marker behaviours) plus `params`. A param can be a fixed value **or** a random spec resolved per trial. |
+| **Stimulus pool** | `stimuli:` | Named, reusable stimulus definitions — a `type` (one of the built-in marker behaviors) plus `params`. A param can be a fixed value **or** a random spec resolved per trial. |
 | **Conditions** | `conditions:` | How the trial's `{left, right}` pair is chosen. `mode: sample` (default) draws **two distinct** stimuli from the pool at random; `mode: pairs` picks one entry from a `pairs:` list. |
 | | `duration_sec:` | How long the trial runs (a number, or a `{uniform: [...]}` spec). |
 
-The **marker behaviours** are code (`stimuli.py`); the YAML only *composes
+The **marker behaviors** are code (`stimuli.py`); the YAML only *composes
 instances* of them:
 
-| `type` | Behaviour |
+| `type` | Behavior |
 |---|---|
 | `static_dark` | Plain dark circle, no motion — baseline / control |
 | `jitter` | Dark circle whose position wanders smoothly (Perlin noise) |
@@ -65,7 +65,7 @@ sides, every resolved parameter. It's logged at startup and in
 
 ```
 mosquito_preference_assay/
-  stimuli.py                   marker behaviours (Stimulus subclasses)
+  stimuli.py                   marker behaviors (Stimulus subclasses)
   stimulus_types.py            type registry + build_stimulus()
   param_spec.py                literal-or-random parameter resolution
   experiment.py                load/validate the YAML; the trial draw
@@ -183,7 +183,7 @@ conditions:
   mode: sample                       # sample (default) | pairs
   pool: [control, wander, grating, tunnel]   # subset of `stimuli`; default = all
   # weights: {grating: 2, control: 1}         # sample mode — bias the draw (default: equal)
-  # --- mode: pairs: pick one entry at random; {a,b} randomises sides, {left,right} fixes them ---
+  # --- mode: pairs: pick one entry at random; {a,b} randomizes sides, {left,right} fixes them ---
   # pairs:
   #   - {a: control, b: grating}
   #   - {left: control, right: tunnel}
@@ -212,7 +212,7 @@ preference-assay design.
 ### `mode: pairs`
 
 Give a `pairs:` list; one entry is picked at random for the trial. `{a: X, b: Y}`
-randomises which side each lands on; `{left: X, right: Y}` fixes them. Use it for
+randomizes which side each lands on; `{left: X, right: Y}` fixes them. Use it for
 a control-vs-treatment design (see `experiments/control_vs_grating.yaml`).
 
 ### Choosing an experiment at launch
@@ -279,7 +279,7 @@ Equivalent one-liner without the node:
 `triggered_capture.launch.py` brings the node up ARMED next to `ros2 bag
 record`. The trigger plays one trial (15 s with `single_trigger`), then the
 node exits, which emits a launch `Shutdown` — SIGINT to the recorder, bag
-finalised. One launch = one animal = one bag. Re-arm for the next = relaunch.
+finalized. One launch = one animal = one bag. Re-arm for the next = relaunch.
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_capture.launch.py
@@ -502,7 +502,7 @@ so recordings are distinguishable.
 ```
 
 - **`left` / `right`** are the authoritative placement — `name` is the pool
-  entry, `type` is the marker behaviour (they differ when the YAML gives a
+  entry, `type` is the marker behavior (they differ when the YAML gives a
   custom name). `params` are all resolved concrete values.
 - **`condition.name`** is a grouping key, *not* placement — `ordered: false` →
   `"a|b"` sorted, side-independent (the sides this trial are in `left`/`right`);
@@ -525,7 +525,7 @@ and resolved params directly, and each animation phase is closed-form in
 
 ---
 
-## Adding a new marker behaviour
+## Adding a new marker behavior
 
 1. Subclass `Stimulus` in `stimuli.py`: `__init__(self, diameter_px, **params)`
    with defaults, `display(self, cx, cy, t)`, and `_params()` returning every

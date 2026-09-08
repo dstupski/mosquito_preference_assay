@@ -9,10 +9,10 @@ An experiment is **one trial**. The YAML has:
                                `pool` at random (no replacement); first drawn
                                -> right, second -> left. `weights` biases it.
                  mode: pairs              pick one entry from `pairs` at random;
-                               {a, b} randomises the sides, {left, right} fixes
+                               {a, b} randomizes the sides, {left, right} fixes
                                them.
   duration_sec: trial length (a number, or a {uniform: [...]} spec)
-  display:     circle diameter, marker centres, background
+  display:     circle diameter, marker centers, background
   trigger:     optional -- {topic: ...} or {node: ...}; its presence makes the
                node open ARMED and wait for a std_msgs/Bool before running.
 
@@ -64,7 +64,7 @@ class Condition:
     """A {left, right} pairing (pairs mode).
 
     ordered=True  -> ``a`` is LEFT, ``b`` is RIGHT; name "a->b".
-    ordered=False -> unordered; sides randomised per trial; name is the two
+    ordered=False -> unordered; sides randomized per trial; name is the two
                      members sorted and joined with "|".
     """
 
@@ -82,7 +82,7 @@ class Condition:
 
 def _pair_ab(pair):
     """Return (a, b, ordered) for a `pairs:` entry: {left,right} fixes the
-    sides, {a,b} (or [a,b]) randomises them."""
+    sides, {a,b} (or [a,b]) randomizes them."""
     if isinstance(pair, (list, tuple)) and len(pair) == 2:
         return pair[0], pair[1], False
     if isinstance(pair, dict):

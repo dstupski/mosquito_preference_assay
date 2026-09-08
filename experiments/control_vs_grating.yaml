@@ -1,6 +1,6 @@
 # Example of conditions.mode: pairs -- the trial is always static-dark control
 # vs. one grating, with the grating's speed band picked at random. Sides are
-# randomised ({a, b}); use {left, right} to fix them.
+# randomized ({a, b}); use {left, right} to fix them.
 schema: mosquito_preference_assay/experiment/1
 name: control_vs_grating
 description: Static-dark control vs. a slow / medium / fast drifting grating.
