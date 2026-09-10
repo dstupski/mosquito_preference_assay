@@ -15,8 +15,7 @@ graphics; ROS 2 Humble for the plumbing.
 ## Contents
 
 - [How it works](#how-it-works)
-- [Dependencies](#dependencies)
-- [Install](#install)
+- [Setup](#setup) · [dependency reference](#dependency-reference)
 - [Quick start](#quick-start)
 - [Writing an experiment](#writing-an-experiment)
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
@@ -89,44 +88,71 @@ test/                          unit + lint tests
 
 ---
 
-## Dependencies
+## Setup
+
+Assumes **ROS 2 is already installed** and you can `source
+/opt/ros/$ROS_DISTRO/setup.bash`. Developed and CI-tested on **Humble**;
+Iron / Jazzy / Rolling should work unchanged (see *dependency reference* for
+the two version-sensitive spots). A **display is required** — the stimulus is
+a real window, there is no headless mode.
+
+```bash
+# 0. ROS-side packages (most are in ros-<distro>-desktop already)
+sudo apt install ros-$ROS_DISTRO-cv-bridge      # for mosquito_detector / video_publisher
+
+# 1. a colcon workspace (skip if you already have one)
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws
+
+# 2. clone
+git clone https://github.com/dstupski/mosquito_preference_assay.git src/mosquito_preference_assay
+
+# 3. Python deps -- into the SAME interpreter ROS uses (usually /usr/bin/python3).
+#    py5 is not in rosdep; the numpy pin avoids an ABI clash with apt matplotlib.
+python3 -m pip install --user py5 "numpy<2"
+
+# 4. Java 17 for py5 (one-time). Skip if you already have the Processing 4
+#    bundle at ~/Applications/Processing; otherwise let py5 fetch its own JDK:
+python3 -m py5_tools.tools.install_jdk -j 17     # installed as `py5-install-jdk` too
+
+# 5. build + source
+colcon build --packages-select mosquito_preference_assay
+source install/setup.bash             # add this line to ~/.bashrc to make it stick
+
+# 6. verify -- opens a window, plays one 15 s trial of the built-in default,
+#    publishes nothing, exits:
+ros2 run mosquito_preference_assay assay
+```
+
+If step 6 shows two circles and prints `[assay] trial 0: ...`, you're set —
+go to [Quick start](#quick-start). If `import py5` fails, see **`JAVA_HOME`**
+below.
+
+### Dependency reference
 
 | Dependency | Version | Comes from | Notes |
 |---|---|---|---|
-| **ROS 2** | Humble | apt (`ros-humble-desktop`) | `rclpy`, `std_msgs`, `launch`, `ros2bag`, `ament_index_python` all included |
+| **ROS 2** | Humble+ | apt (`ros-<distro>-desktop`) | `rclpy`, `std_msgs`, `sensor_msgs`, `launch`, `rosbag2`, `ament_index_python` all included |
 | **PyYAML** | any | ships with ROS 2 (`rclpy` dep) | experiment-file parsing |
-| **py5** | ≥ 0.10 | `pip install --user py5` | the sketch. **Not in rosdep** — must be installed into the interpreter ROS uses (`/usr/bin/python3`) |
-| **numpy** | **< 2** | `pip install --user "numpy<2"` | py5 pulls numpy 2, which is ABI-incompatible with the apt `python3-matplotlib` (harmless `_ARRAY_API not found` spam otherwise). py5 runs fine on 1.26. |
-| **Java** | 17 | Processing 4 bundle, or `py5-install-jdk` | py5 needs a Java 17 JVM. `assay.py` auto-sets `JAVA_HOME` if it's unset and can find one (see below). |
-| a display | — | — | this is a windowed/fullscreen sketch; there is no headless mode |
-| **cv_bridge**, **OpenCV** | any | apt (`ros-humble-cv-bridge`, part of `ros-humble-desktop`) | `mosquito_detector_node` / `video_publisher_node` only — not needed to run the assay itself |
+| **py5** | ≥ 0.10 | `pip install --user py5` | the sketch. **Not in rosdep** — install into the interpreter ROS uses |
+| **numpy** | **< 2** | `pip install --user "numpy<2"` | on Ubuntu 22.04, py5 pulls numpy 2 which is ABI-incompatible with the apt `python3-matplotlib` (`_ARRAY_API not found` spam; the sketch still runs). py5 is fine on 1.26. On Ubuntu 24.04 / Jazzy the stack is numpy-2-native — this pin may not be needed. |
+| **Java** | 17 | Processing 4 bundle, or `py5-install-jdk` | py5 needs a Java 17 JVM |
+| **cv_bridge**, **OpenCV** | any | apt `ros-<distro>-cv-bridge` (in `-desktop`) | `mosquito_detector` / `video_publisher` only — not needed for the assay itself |
+| a display | — | — | windowed / fullscreen sketch; no headless mode |
 
 **`JAVA_HOME`** — on import, `assay.py` sets it (if unset) to the first of:
 `~/Applications/Processing/lib/app/resources/jdk`, or a JDK under
-`~/.cache/py5/` that `py5-install-jdk` created. If none exist, export it
-yourself before launching.
+`~/.cache/py5/` that `py5-install-jdk` created. If neither exists, export it
+yourself: `export JAVA_HOME=/path/to/jdk-17`.
 
-There is no `requirements.txt` because the ROS/apt half and the pip half live
-in different places; the two `pip install --user` lines above are the whole
-Python story. A dedicated venv with `--system-site-packages` (for `rclpy`) is
-the tidier option if you deploy this to several rigs.
+**Older / newer ROS:** the only version-sensitive code is
+`rclpy.try_shutdown()` (Humble+) and `rclpy.executors.ExternalShutdownException`
+(Galactic+), used in each node's `main()`. Foxy would need those two swapped
+for `rclpy.shutdown()` + a bare `KeyboardInterrupt` catch.
 
----
-
-## Install
-
-```bash
-# 1. Python deps into the ROS interpreter
-python3 -m pip install --user py5 "numpy<2"
-python3 -c 'import py5; print("py5", py5.__version__)'   # sanity (needs JAVA_HOME or a findable JDK)
-
-# 2. clone into a workspace and build
-cd ~/ros2_ws/src
-git clone https://github.com/dstupski/mosquito_preference_assay.git
-cd ~/ros2_ws
-colcon build --packages-select mosquito_preference_assay
-source install/setup.bash
-```
+There is no `requirements.txt` — the apt half and the pip half live in
+different places, and the one `pip install --user` line above is the whole
+Python story. A venv with `--system-site-packages` (for `rclpy`) is tidier if
+you deploy to several rigs.
 
 ---
 
