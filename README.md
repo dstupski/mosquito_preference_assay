@@ -79,10 +79,13 @@ experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
   single_trigger.yaml           triggered 15 s trial, then everything concludes
-config/assay_params.yaml       operational ROS params
+config/
+  assay_params.yaml             operational ROS params for stimulus_publisher
+  detector_params.yaml          ROS params for mosquito_detector
 launch/
-  assay.launch.py               node + params file
-  triggered_capture.launch.py   node (triggered) + ros2 bag record + auto-shutdown
+  assay.launch.py               stimulus_publisher + its params file
+  detector.launch.py            mosquito_detector + its params file
+  triggered_capture.launch.py   stimulus_publisher (triggered) + ros2 bag record + auto-shutdown
 test/                          unit + lint tests
 ```
 
@@ -340,29 +343,41 @@ self-contained; frame-to-frame track linking isn't needed for a live
 trigger). A detection fires once `consecutive_frames` frames in a row have a
 qualifying blob, at most once per `cooldown_sec`.
 
+### Configure it: `config/detector_params.yaml`
+
+Everything the detector needs — which image topic, ROI, thresholds, timing —
+is a ROS parameter, all spelled out and documented in
+**`config/detector_params.yaml`**. Copy it, edit for your rig, and:
+
 ```bash
+ros2 launch mosquito_preference_assay detector.launch.py            # uses the shipped default
+ros2 launch mosquito_preference_assay detector.launch.py \
+    params_file:=/abs/path/to/my_detector.yaml                       # your copy
+# or without launch:
 ros2 run mosquito_preference_assay mosquito_detector --ros-args \
-    -p image_topic:=/camera/image_raw -p roi:=340,40,1260,1070 \
-    -p topic:=/arena/mosquito_present
+    --params-file /abs/path/to/my_detector.yaml
 ```
 
 | Param | Default | Meaning |
 |---|---|---|
 | `image_topic` | `/camera/image_raw` | `sensor_msgs/Image` input |
 | `image_qos` | `reliable` | `reliable` or `sensor_data` (best-effort — matches most camera drivers) |
-| `topic` | `/arena/mosquito_present` | detection-event output (`std_msgs/String` JSON) |
+| `topic` | `/arena/mosquito_present` | detection-event output (`std_msgs/String` JSON) — point the assay's `trigger.topic` here |
 | `roi` | `""` | `"x0,y0,x1,y1"` px, exclusive; `""` = whole frame |
 | `diff_threshold` | `25` | pixel intensity diff vs. background to count as foreground |
 | `min_area_px` / `max_area_px` | `4.0` / `5000.0` | blob area bounds (rejects noise speckle and large intruders) |
 | `morph_kernel` | `3` | open/close kernel size (px) cleaning up the mask |
 | `consecutive_frames` | `3` | frames with a qualifying blob required before firing |
 | `cooldown_sec` | `10.0` | minimum gap between fired events |
-| `publish_debug_image` | `false` | also publish an annotated `~/debug_image` (ROI + detected box) for tuning — e.g. `ros2 run rqt_image_view rqt_image_view` |
+| `publish_debug_image` | `false` | also publish an annotated `~/debug_image` (ROI + detected box) — view with `ros2 run rqt_image_view rqt_image_view` |
 
-Tuning a new rig: start with `roi` empty and `publish_debug_image:=true`,
-watch `~/debug_image`, and narrow `roi` to exclude anything static that isn't
-the arena (equipment, lights, reflections) — see `find_candidates()` picking
-the *largest* blob, so a static bright spot outside the ROI can otherwise win
+One-off overrides still work: `-p roi:=340,40,1260,1070` on the `ros2 run`
+line, or `-p` after the params file.
+
+Tuning a new rig: set `roi: ""` and `publish_debug_image: true`, watch
+`~/debug_image`, and narrow `roi` to exclude anything static that isn't the
+arena (equipment, lights, reflections) — `find_candidates()` picks the
+*largest* blob, so a static bright spot outside the ROI can otherwise win
 over the mosquito.
 
 ### JSON schema `mosquito_preference_assay/detection_event/1`
@@ -414,10 +429,15 @@ are actually arriving.
 Full pipeline, end to end, on real footage:
 
 ```bash
+# 1. pseudo camera feed
 ros2 run mosquito_preference_assay video_publisher --ros-args \
     -p source:=.../data/raw/<session>/cam_a -p rate_hz:=30 -p loop:=false &
-ros2 run mosquito_preference_assay mosquito_detector --ros-args \
-    -p roi:=340,40,1260,1070 &
+
+# 2. detector (edit config/detector_params.yaml for real use; here just set the roi)
+ros2 launch mosquito_preference_assay detector.launch.py &
+#    ...or: ros2 run mosquito_preference_assay mosquito_detector --ros-args -p roi:=340,40,1260,1070 &
+
+# 3. the assay, armed, listening for the detector's events, recording to a bag
 ros2 launch mosquito_preference_assay triggered_capture.launch.py \
     trigger_topic:=/arena/mosquito_present trigger_msg_type:=string
 ```

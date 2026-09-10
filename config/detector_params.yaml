@@ -1,0 +1,60 @@
+# Configuration for the mosquito_detector node.
+#
+#   ros2 launch mosquito_preference_assay detector.launch.py
+#   ros2 launch mosquito_preference_assay detector.launch.py params_file:=<path>
+#   ros2 run   mosquito_preference_assay mosquito_detector --ros-args --params-file <path>
+#
+# Copy this file, edit for your rig, and point the launch/run at it. Every
+# value is spelled out -- nothing is left implicit.
+#
+# "/**" applies these to the node whatever it is named.
+
+/**:
+  ros__parameters:
+
+    # --- input ---------------------------------------------------------- #
+    # The camera image feed to watch (sensor_msgs/Image).
+    image_topic: "/camera/image_raw"
+    # QoS to subscribe with -- must be compatible with the publisher:
+    #   reliable      most simple publishers, and this package's video_publisher
+    #   sensor_data   best-effort; what most real camera drivers use
+    image_qos: "reliable"
+
+    # --- output ------------------------------------------------------- #
+    # Where detection events go (std_msgs/String, JSON, schema
+    # mosquito_preference_assay/detection_event/1). Point the assay's
+    # trigger.topic at this same value.
+    topic: "/arena/mosquito_present"
+
+    # --- region of interest --------------------------------------- #
+    # "x0,y0,x1,y1" pixel box (x1/y1 exclusive) that detection is restricted
+    # to. Anything outside it -- equipment, lights, mesh/frame edges,
+    # reflections -- is invisible to the detector. "" = whole frame (rarely
+    # what you want). Derive it once per rig with publish_debug_image: true.
+    roi: ""
+
+    # --- detection ------------------------------------------------- #
+    # Pixel-intensity difference from the background frame (captured once, from
+    # the first image received) before a pixel counts as foreground. Raise if
+    # picking up sensor noise / lighting flicker; lower if the mosquito is faint.
+    diff_threshold: 25
+    # Blob area bounds (px^2). min rejects speckle noise; max rejects large
+    # intruders (a hand, a big shadow).
+    min_area_px: 4.0
+    max_area_px: 5000.0
+    # Morphological open/close kernel size (px) that cleans up the mask before
+    # contour detection.
+    morph_kernel: 3
+
+    # --- firing ------------------------------------------------- #
+    # Frames in a row that must have a qualifying blob before an event fires
+    # (debounces single-frame noise).
+    consecutive_frames: 3
+    # Minimum seconds between fired events.
+    cooldown_sec: 10.0
+
+    # --- tuning aid ------------------------------------------- #
+    # Publish an annotated image on ~/debug_image (ROI box + detected blob box)
+    # -- view with e.g. `ros2 run rqt_image_view rqt_image_view`. Turn off for
+    # a real run to save bandwidth.
+    publish_debug_image: false

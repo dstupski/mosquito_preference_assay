@@ -11,31 +11,28 @@ test_videos_particle_tracking/src/particle_tracking/detection.py). A
 detection fires after `consecutive_frames` frames with a qualifying blob, at
 most once per `cooldown_sec`.
 
+Configure it with a params file -- copy config/detector_params.yaml, edit it
+for your rig, and:
+
+    ros2 launch mosquito_preference_assay detector.launch.py \\
+        params_file:=/path/to/my_detector.yaml
+    # or:
+    ros2 run mosquito_preference_assay mosquito_detector --ros-args \\
+        --params-file /path/to/my_detector.yaml
+
+Every parameter, its type, default and meaning is documented in
+config/detector_params.yaml. In brief:
+
+    image_topic (str)   camera feed (sensor_msgs/Image)
+    image_qos   (str)   reliable | sensor_data
+    topic       (str)   detection-event output (std_msgs/String JSON)
+    roi         (str)   "x0,y0,x1,y1" px box, exclusive; "" = whole frame
+    diff_threshold (int), min_area_px / max_area_px (double), morph_kernel (int)
+    consecutive_frames (int), cooldown_sec (double)
+    publish_debug_image (bool)
+
 Test without a real camera: video_publisher_node.py plays a video file or a
 directory of frames as a pseudo camera feed on the same image topic.
-
-    ros2 run mosquito_preference_assay mosquito_detector --ros-args \\
-        -p image_topic:=/camera/image_raw -p roi:=340,40,1260,1070 \\
-        -p topic:=/arena/mosquito_present
-
-Parameters:
-    image_topic          string  /camera/image_raw   sensor_msgs/Image input
-    image_qos            string  reliable   reliable | sensor_data (best-effort,
-                                            matches most camera drivers)
-    topic                string  /arena/mosquito_present   detection-event
-                                            output (std_msgs/String JSON)
-    roi                  string  ""         "x0,y0,x1,y1" px, exclusive; "" = whole frame
-    diff_threshold        int     25        pixel intensity diff vs background
-                                            to count as foreground
-    min_area_px           double  4.0       minimum blob area
-    max_area_px           double  5000.0    maximum blob area (rejects large
-                                            intruders, e.g. a hand)
-    morph_kernel           int     3         open/close kernel size (px)
-    consecutive_frames    int     3         frames with a qualifying blob
-                                            required before firing
-    cooldown_sec          double  10.0      minimum gap between fired events
-    publish_debug_image   bool    False     also publish an annotated
-                                            ~/debug_image (for tuning)
 
 JSON schema "mosquito_preference_assay/detection_event/1":
     schema, stamp_wall, event ("mosquito_detected"), position_px [cx,cy],
