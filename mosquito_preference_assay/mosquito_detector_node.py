@@ -95,11 +95,13 @@ class MosquitoDetector(Node):
 
     def _on_image(self, msg):
         try:
-            frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+            # mono8 in one cv_bridge conversion -- whatever the source encoding
+            # actually is (mono8, bgr8, bayer, ...), rather than forcing bgr8
+            # and then manually cvtColor-ing back to gray.
+            gray = self._bridge.imgmsg_to_cv2(msg, desired_encoding="mono8")
         except Exception as exc:  # noqa: BLE001
             self.get_logger().warn(f"cv_bridge conversion failed: {exc!r}")
             return
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if self._background is None or self._background.shape != gray.shape:
             self._background = gray
@@ -115,7 +117,7 @@ class MosquitoDetector(Node):
         best = candidates[0] if candidates else None
 
         if self._debug_pub is not None:
-            self._publish_debug(frame, best)
+            self._publish_debug(gray, best)
 
         if best is None:
             self._consecutive = 0
@@ -155,8 +157,10 @@ class MosquitoDetector(Node):
             f"mosquito_detected at ({blob['cx']:.0f},{blob['cy']:.0f}) area={blob['area']:.0f}"
         )
 
-    def _publish_debug(self, frame, best):
-        annotated = frame.copy()
+    def _publish_debug(self, gray, best):
+        # BGR only for the annotation colors -- this debug path only runs
+        # when publish_debug_image is on, not in the normal hot path.
+        annotated = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         if self._roi is not None:
             x0, y0, x1, y1 = self._roi
             cv2.rectangle(annotated, (x0, y0), (x1, y1), (0, 255, 255), 2)

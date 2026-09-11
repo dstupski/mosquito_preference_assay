@@ -3,6 +3,9 @@
 -- publishes sensor_msgs/Image so mosquito_detector (or anything else that
 wants a camera topic) can be exercised without real hardware.
 
+For two synchronized feeds (e.g. a stereo rig), use dual_video_publisher
+instead.
+
     # a video file:
     ros2 run mosquito_preference_assay video_publisher --ros-args \\
         -p source:=/path/to/clip.mp4 -p topic:=/camera/image_raw -p rate_hz:=20
@@ -21,16 +24,14 @@ Parameters:
 """
 
 import sys
-from pathlib import Path
 
-import cv2
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-_FRAME_EXTS = (".bmp", ".png", ".jpg", ".jpeg")
+from .frame_source import FrameSource
 
 
 class VideoPublisher(Node):
@@ -49,41 +50,21 @@ class VideoPublisher(Node):
 
         self._bridge = CvBridge()
         self._pub = self.create_publisher(Image, topic, 10)
-
-        path = Path(source)
-        if not path.exists():
-            raise RuntimeError(f"source not found: {path}")
-
-        if path.is_dir():
-            self._frames = sorted(
-                (f for f in path.iterdir() if f.suffix.lower() in _FRAME_EXTS),
-                key=lambda f: f.name,
-            )
-            if not self._frames:
-                raise RuntimeError(f"no frame images ({_FRAME_EXTS}) found in {path}")
-            self._cap = None
-            self._idx = 0
-            self.get_logger().info(
-                f"publishing {len(self._frames)} frames from '{path}' to '{topic}' @ {rate_hz} Hz"
-            )
-        else:
-            self._cap = cv2.VideoCapture(str(path))
-            if not self._cap.isOpened():
-                raise RuntimeError(f"could not open video {path}")
-            self._frames = None
-            self.get_logger().info(
-                f"publishing video '{path}' to '{topic}' @ {rate_hz} Hz (loop={self._loop})"
-            )
+        self._source = FrameSource(source)
+        self.get_logger().info(
+            f"publishing {self._source.description} to '{topic}' "
+            f"@ {rate_hz} Hz (loop={self._loop})"
+        )
 
         self._sent = 0
         self._timer = self.create_timer(1.0 / rate_hz, self._tick)
 
     def _tick(self):
-        frame = self._next_frame()
+        frame = self._source.next_frame()
         if frame is None:
             if self._loop:
-                self._restart()
-                frame = self._next_frame()
+                self._source.restart()
+                frame = self._source.next_frame()
             if frame is None:
                 self.get_logger().info(f"source exhausted after {self._sent} frames; stopping")
                 self._timer.cancel()
@@ -95,22 +76,6 @@ class VideoPublisher(Node):
         msg.header.frame_id = self._frame_id
         self._pub.publish(msg)
         self._sent += 1
-
-    def _next_frame(self):
-        if self._frames is not None:
-            if self._idx >= len(self._frames):
-                return None
-            frame = cv2.imread(str(self._frames[self._idx]))
-            self._idx += 1
-            return frame
-        ok, frame = self._cap.read()
-        return frame if ok else None
-
-    def _restart(self):
-        if self._frames is not None:
-            self._idx = 0
-        else:
-            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 
 def main(args=None):

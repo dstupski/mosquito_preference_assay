@@ -19,7 +19,8 @@ graphics; ROS 2 Humble for the plumbing.
 - [Quick start](#quick-start)
 - [Writing an experiment](#writing-an-experiment)
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
-- [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher)
+- [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher) · [`dual_video_publisher`](#two-synchronized-cameras-dual_video_publisher)
+- [Real-time stereo tracking](#real-time-stereo-tracking) — `tracker` + `stereo_sync`
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a run offline](#reproducing-a-run-offline)
@@ -74,7 +75,11 @@ mosquito_preference_assay/
   detection.py                 background-subtraction blob detection (ported
                                 from test_videos_particle_tracking)
   mosquito_detector_node.py    watches a camera feed, publishes detection events
+  frame_source.py               shared video-file / frame-directory reader
   video_publisher_node.py      plays a video / frame directory as a pseudo camera feed
+  dual_video_publisher_node.py  two SYNCHRONIZED pseudo camera feeds (one shared timer)
+  tracker_node.py               real-time 2D blob tracking, one camera per instance
+  stereo_sync_node.py           pairs two tracker_node outputs by timestamp
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
@@ -139,7 +144,9 @@ below.
 | **py5** | ≥ 0.10 | `pip install --user py5` | the sketch. **Not in rosdep** — install into the interpreter ROS uses |
 | **numpy** | **< 2** | `pip install --user "numpy<2"` | on Ubuntu 22.04, py5 pulls numpy 2 which is ABI-incompatible with the apt `python3-matplotlib` (`_ARRAY_API not found` spam; the sketch still runs). py5 is fine on 1.26. On Ubuntu 24.04 / Jazzy the stack is numpy-2-native — this pin may not be needed. |
 | **Java** | 17 | Processing 4 bundle, or `py5-install-jdk` | py5 needs a Java 17 JVM |
-| **cv_bridge**, **OpenCV** | any | apt `ros-<distro>-cv-bridge` (in `-desktop`) | `mosquito_detector` / `video_publisher` only — not needed for the assay itself |
+| **cv_bridge**, **OpenCV** | any | apt `ros-<distro>-cv-bridge` (in `-desktop`) | camera/tracking nodes only — not needed for the assay itself |
+| **message_filters** | any | apt `ros-<distro>-message-filters` (in `-desktop`) | `stereo_sync` only |
+| **geometry_msgs** | any | apt (in `-desktop`) | `tracker` / `stereo_sync` only |
 | a display | — | — | windowed / fullscreen sketch; no headless mode |
 
 **`JAVA_HOME`** — on import, `assay.py` sets it (if unset) to the first of:
@@ -416,15 +423,18 @@ ros2 run mosquito_preference_assay video_publisher --ros-args \
 | `frame_id` | `camera` | image `header.frame_id` |
 
 **`rate_hz` is a target, not a guarantee** — each tick decodes a full frame
-off disk, so on a large source (e.g. 1440×1080 `.bmp`) the achieved rate can
-top out below the request; check with `ros2 topic hz /camera/image_raw`.
-Tested requesting `140.0` (to emulate the real rig's frame rate) against the
-`cam_a` session above: it settled around **~125 Hz**, not 140 — a limit of
-this disk-decode-per-tick test tool, not of `mosquito_detector` or a real
-camera driver (which hands off frames already in memory). The detector still
-fired correctly at that rate; which frame index it lands on to fire can shift
-between runs since `consecutive_frames` debounces against however fast frames
-are actually arriving.
+off disk, so the achieved rate can top out below the request; check with
+`ros2 topic hz /camera/image_raw`. `FrameSource` reads frame-directory sources
+with `IMREAD_UNCHANGED` rather than forcing a color decode, so a genuinely
+grayscale source (mono machine-vision cameras, e.g. Basler `ac*m*`, publish
+`mono8` — not upconverted to `bgr8` and converted back downstream). Tested
+requesting `200.0` (to emulate the real rig) against the `cam_a` session
+above: it settled around **~188 Hz** — close to the request; disk decode is
+no longer the bottleneck once the redundant color round-trip is gone (it was
+capped around 125 Hz at a 140 Hz request before that fix). The detector still
+fires correctly at whatever rate frames actually arrive; which frame index it
+lands on to fire can shift between runs since `consecutive_frames` debounces
+against the real arrival rate.
 
 Full pipeline, end to end, on real footage:
 
@@ -441,6 +451,117 @@ ros2 launch mosquito_preference_assay detector.launch.py &
 ros2 launch mosquito_preference_assay triggered_capture.launch.py \
     trigger_topic:=/arena/mosquito_present trigger_msg_type:=string
 ```
+
+### Two synchronized cameras: `dual_video_publisher`
+
+For a stereo rig, `dual_video_publisher` plays two sources from **one shared
+timer** — frame *N* of A and frame *N* of B are published together with the
+identical ROS timestamp every tick, the way a hardware-triggered stereo pair
+would arrive. (For one camera, use `video_publisher` instead.)
+
+```bash
+ros2 run mosquito_preference_assay dual_video_publisher --ros-args \
+    -p source_a:=.../data/raw/<session>/cam_a -p source_b:=.../data/raw/<session>/cam_b \
+    -p topic_a:=/cam_a/image_raw -p topic_b:=/cam_b/image_raw \
+    -p rate_hz:=200 -p loop:=false
+```
+
+| Param | Default | Meaning |
+|---|---|---|
+| `source_a` / `source_b` | *(required)* | video file or frame directory, one per camera |
+| `topic_a` / `topic_b` | `/cam_a/image_raw` / `/cam_b/image_raw` | |
+| `rate_hz` | `20.0` | |
+| `loop` | `true` | if **either** source runs out, restart **both** together — never let them drift onto mismatched frame indices |
+| `frame_id_a` / `frame_id_b` | `cam_a` / `cam_b` | |
+
+---
+
+## Real-time stereo tracking
+
+First step toward feeding two cameras' 2D detections into a 3D calibration:
+run 2D blob tracking on each camera continuously (not the debounced trigger
+`mosquito_detector` fires occasionally), and pair the two streams by
+timestamp into one synchronized output.
+
+**Two single-camera `tracker` nodes, not one node that owns both cameras** —
+run the same node twice, like `video_publisher`:
+
+```bash
+ros2 run mosquito_preference_assay tracker --ros-args \
+    -p image_topic:=/cam_a/image_raw -p topic:=/tracking/cam_a/position \
+    -p roi:=340,40,1260,1070 -p frame_id:=cam_a &
+ros2 run mosquito_preference_assay tracker --ros-args \
+    -p image_topic:=/cam_b/image_raw -p topic:=/tracking/cam_b/position \
+    -p roi:=340,40,1260,1070 -p frame_id:=cam_b &
+ros2 run mosquito_preference_assay stereo_sync
+```
+
+| Why split | |
+|---|---|
+| Parallelism | two OS processes → real separate cores, instead of camera A and B sharing one Python callback |
+| Modularity | run / tune one camera without the other — same node, run twice |
+| Resilience | camera A keeps publishing even if camera B stalls |
+| Where sync lives | pairing belongs with whoever needs paired data (eventually: 3D triangulation) — not baked into the tracker |
+
+**`tracker`** (one per camera) — same background-subtraction detection as
+`mosquito_detector` (`detection.py`), but publishes **every** frame with a
+qualifying blob instead of a debounced trigger. Output is
+`geometry_msgs/PointStamped`: `point.x` / `point.y` are the pixel position,
+**`point.z` is the blob *area*** (not a real z — reused so the message
+carries a `header.stamp` for `message_filters` to synchronize on, without a
+custom message type). Nothing is published for a frame with no qualifying
+blob — "not detected" is the absence of a message.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `image_topic` | `/camera/image_raw` | `sensor_msgs/Image` input |
+| `image_qos` | `reliable` | `reliable` or `sensor_data` |
+| `topic` | `~/position` | `geometry_msgs/PointStamped` output |
+| `frame_id` | `camera` | point `header.frame_id` |
+| `roi`, `diff_threshold`, `min_area_px` / `max_area_px`, `morph_kernel` | same as `mosquito_detector` | detection tuning |
+| `log_every_n` | `200` | log the achieved detection rate every N (`0` disables) |
+
+**`stereo_sync`** — pairs two `tracker` outputs by `header.stamp`
+(`message_filters.ApproximateTimeSynchronizer`) and republishes them as one
+`std_msgs/String` JSON message — the same shape a combined tracker would have
+produced, so a downstream 3D step doesn't care that tracking is two processes.
+A pair only comes out when **both** cameras detected something at (about) the
+same instant, which is exactly what triangulation needs.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `topic_a` / `topic_b` | `/tracking/cam_a/position` / `/tracking/cam_b/position` | the two `tracker` outputs |
+| `topic` | `/tracking/stereo_track` | combined output (`std_msgs/String` JSON) |
+| `sync_slop_sec` | `0.05` | max stamp difference to count as one instant |
+| `queue_size` | `100` | buffered messages per side awaiting a match |
+| `log_every_n` | `200` | log the achieved synchronized-pair rate every N (`0` disables) |
+
+### JSON schema `mosquito_preference_assay/stereo_track/1`
+
+```json
+{"schema":"mosquito_preference_assay/stereo_track/1","stamp_wall":1789148349.56,
+ "frame_stamp":1789148349.54,
+ "a":{"detected":true,"x":386.20,"y":550.10,"area":93.0},
+ "b":{"detected":true,"x":414.48,"y":549.85,"area":81.0}}
+```
+(A real synchronized pair from the arena footage — two viewpoints on the same
+physical mosquito, ready to feed a 3D calibration.)
+
+### Tested: real footage, 200 fps target
+
+`dual_video_publisher` → two `tracker`s → `stereo_sync`, on the real `cam_a`/
+`cam_b` session, `rate_hz:=200`, real ROI:
+
+| | Rate | 776 real frame-pairs |
+|---|---|---|
+| Camera decode (after the grayscale fix) | ~188 Hz | — |
+| Split tracking (`tracker` ×2 + `stereo_sync`) | **~150–165 Hz**, kept pace | **all 776, zero drops** |
+
+An earlier single combined-node design was tried first and discarded: it
+fell behind at ~90–125 Hz and **permanently lost frames** once
+`message_filters`' sync queue overflowed (stalled at 500/776, no further
+output even after a 30 s wait) — the split design above is what actually
+works at this rate, not just an incremental tweak.
 
 ---
 
