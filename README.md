@@ -21,6 +21,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
 - [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher) · [`dual_video_publisher`](#two-synchronized-cameras-dual_video_publisher)
 - [Real-time stereo tracking](#real-time-stereo-tracking) — `tracker` + `stereo_sync`
+- [Watching a trajectory live](#watching-a-trajectory-live-trajectory_plotter) — `trajectory_plotter`
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a run offline](#reproducing-a-run-offline)
@@ -80,6 +81,8 @@ mosquito_preference_assay/
   dual_video_publisher_node.py  two SYNCHRONIZED pseudo camera feeds (one shared timer)
   tracker_node.py               real-time 2D blob tracking, one camera per instance
   stereo_sync_node.py           pairs two tracker_node outputs by timestamp
+  trajectory_plotter_node.py    live matplotlib 3D plot of a position stream
+  synthetic_trajectory_publisher_node.py  made-up 3D trajectory, for testing the plotter
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
@@ -147,7 +150,8 @@ below.
 | **cv_bridge**, **OpenCV** | any | apt `ros-<distro>-cv-bridge` (in `-desktop`) | camera/tracking nodes only — not needed for the assay itself |
 | **message_filters** | any | apt `ros-<distro>-message-filters` (in `-desktop`) | `stereo_sync` only |
 | **geometry_msgs** | any | apt (in `-desktop`) | `tracker` / `stereo_sync` only |
-| a display | — | — | windowed / fullscreen sketch; no headless mode |
+| **matplotlib** | any | apt `python3-matplotlib` (often already present — see the numpy note above) | `trajectory_plotter` only |
+| a display | — | — | windowed / fullscreen sketch; also `trajectory_plotter`'s GUI |
 
 **`JAVA_HOME`** — on import, `assay.py` sets it (if unset) to the first of:
 `~/Applications/Processing/lib/app/resources/jdk`, or a JDK under
@@ -562,6 +566,44 @@ fell behind at ~90–125 Hz and **permanently lost frames** once
 `message_filters`' sync queue overflowed (stalled at 500/776, no further
 output even after a 30 s wait) — the split design above is what actually
 works at this rate, not just an incremental tweak.
+
+### Watching a trajectory live: `trajectory_plotter`
+
+A live matplotlib 3D plot of a position stream — for watching a trajectory
+get computed instead of reading numbers off a topic echo. It's a plain
+visualizer (subscribes only, never publishes), aimed at whatever eventually
+publishes real x/y/z from the 3D calibration; for now, test it against a
+made-up trajectory with `synthetic_trajectory_publisher`:
+
+```bash
+ros2 run mosquito_preference_assay synthetic_trajectory_publisher --ros-args \
+    -p pattern:=lissajous
+ros2 run mosquito_preference_assay trajectory_plotter
+```
+
+Both read/write `geometry_msgs/PointStamped` on `/tracking/position_3d` by
+default — real `x`/`y`/`z`, no field-reuse hack needed since there are three
+real dimensions to fill.
+
+**The axis box holds still.** Each axis grows to fit the full trajectory seen
+so far and then stops — it does *not* rescale to whichever points currently
+happen to be in the trailing window, which would make it visibly resize every
+redraw as the trail slides. Give `xlim`/`ylim`/`zlim` (`"min,max"`) to pin an
+axis to a known range (e.g. the real arena size) from the very first frame
+instead of growing into it.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `topic` | `/tracking/position_3d` | `geometry_msgs/PointStamped` input |
+| `max_points` | `500` | trailing window kept/drawn (`<=0` = unbounded) |
+| `redraw_hz` | `15.0` | plot refresh rate — decoupled from the message rate |
+| `xlim` / `ylim` / `zlim` | `""` | `"min,max"` to fix an axis; `""` = grow-to-fit then hold |
+| `title` | `mosquito_preference_assay -- 3D trajectory` | window title |
+
+`synthetic_trajectory_publisher` params: `pattern` (`lissajous` default /
+`helix` / `random_walk`), `rate_hz` (30.0), `period_sec` (8.0, lissajous/helix),
+`scale_xy` / `scale_z` / `z_offset` (extent + center), `step_std` /`seed`
+(random_walk), `topic`, `frame_id`.
 
 ---
 

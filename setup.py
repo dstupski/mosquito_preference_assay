@@ -33,6 +33,9 @@ setup(
             "dual_video_publisher = mosquito_preference_assay.dual_video_publisher_node:main",
             "tracker = mosquito_preference_assay.tracker_node:main",
             "stereo_sync = mosquito_preference_assay.stereo_sync_node:main",
+            "trajectory_plotter = mosquito_preference_assay.trajectory_plotter_node:main",
+            "synthetic_trajectory_publisher = "
+            "mosquito_preference_assay.synthetic_trajectory_publisher_node:main",
             "assay = mosquito_preference_assay.assay:main",
         ],
     },
