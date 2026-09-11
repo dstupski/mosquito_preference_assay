@@ -30,6 +30,10 @@ Parameters:
     xlim / ylim / zlim  string  ""      "min,max" -- fixed axis range, known up front
                                         (e.g. the real arena size); "" = grow-to-fit
                                         the full trajectory and then hold still
+    equal_aspect    bool    True        scale the box so one unit is the same length
+                                        on all three axes -- with real arena limits
+                                        the box is then the arena's true shape, not
+                                        stretched to a cube
 
 A display is required (matplotlib GUI backend -- TkAgg/Qt5Agg/QtAgg). Closing
 the plot window shuts the node down; so does Ctrl-C in the terminal.
@@ -70,6 +74,7 @@ class TrajectoryPlotter(Node):
         self._xlim = _parse_range(self.declare_parameter("xlim", "").value)
         self._ylim = _parse_range(self.declare_parameter("ylim", "").value)
         self._zlim = _parse_range(self.declare_parameter("zlim", "").value)
+        self._equal_aspect = bool(self.declare_parameter("equal_aspect", True).value)
 
         self._maxlen = max_points if max_points > 0 else None
         self._lock = threading.Lock()
@@ -127,16 +132,21 @@ class TrajectoryPlotter(Node):
         status = ax.text2D(0.02, 0.98, "", transform=ax.transAxes, va="top", fontsize=9)
 
         def _apply_axis_limits(bounds):
+            spans = []
             for lim, (lo, hi), setter in (
                 (self._xlim, bounds[0], ax.set_xlim3d),
                 (self._ylim, bounds[1], ax.set_ylim3d),
                 (self._zlim, bounds[2], ax.set_zlim3d),
             ):
-                if lim is not None:
-                    setter(*lim)
-                    continue
-                pad = (hi - lo) * 0.1 or 1.0
-                setter(lo - pad, hi + pad)
+                if lim is None:
+                    pad = (hi - lo) * 0.1 or 1.0
+                    lim = (lo - pad, hi + pad)
+                setter(*lim)
+                spans.append(lim[1] - lim[0])
+            if self._equal_aspect:
+                # one unit is then the same length on every axis, so a box set
+                # to the real arena limits is drawn in the arena's true shape
+                ax.set_box_aspect(spans)
 
         def _update(_frame):
             xs, ys, zs, n_total, last_wall, bounds = self.snapshot()

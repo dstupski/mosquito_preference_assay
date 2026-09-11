@@ -22,6 +22,8 @@ graphics; ROS 2 Humble for the plumbing.
 - [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher) · [`dual_video_publisher`](#two-synchronized-cameras-dual_video_publisher)
 - [Real-time stereo tracking](#real-time-stereo-tracking) — `tracker` + `stereo_sync`
 - [Watching a trajectory live](#watching-a-trajectory-live-trajectory_plotter) — `trajectory_plotter`
+- [3D triangulation](#3d-triangulation) — `triangulator`
+- [Benchmarking and latency](#benchmarking-and-latency) — `benchmark` + `pipeline_monitor`
 - [ROS parameters](#ros-parameters)
 - [Published messages](#published-messages)
 - [Reproducing a run offline](#reproducing-a-run-offline)
@@ -83,6 +85,9 @@ mosquito_preference_assay/
   stereo_sync_node.py           pairs two tracker_node outputs by timestamp
   trajectory_plotter_node.py    live matplotlib 3D plot of a position stream
   synthetic_trajectory_publisher_node.py  made-up 3D trajectory, for testing the plotter
+  triangulator_node.py          stereo pair -> real 3D position (mm), via the rig calibration
+  pipeline_monitor_node.py      live per-stage lag / rate / yield reporting
+  benchmark_node.py             per-component timings: what this machine can do
 experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
@@ -94,6 +99,7 @@ launch/
   assay.launch.py               stimulus_publisher + its params file
   detector.launch.py            mosquito_detector + its params file
   triggered_capture.launch.py   stimulus_publisher (triggered) + ros2 bag record + auto-shutdown
+  tracking_benchmark.launch.py  whole tracking pipeline + pipeline_monitor, on recorded footage
 test/                          unit + lint tests
 ```
 
@@ -524,6 +530,12 @@ blob — "not detected" is the absence of a message.
 | `frame_id` | `camera` | point `header.frame_id` |
 | `roi`, `diff_threshold`, `min_area_px` / `max_area_px`, `morph_kernel` | same as `mosquito_detector` | detection tuning |
 | `log_every_n` | `200` | log the achieved detection rate every N (`0` disables) |
+| `publish_debug_image` | `False` | publish `~/debug_image`: the frame with the ROI box and the accepted blob drawn on it — for eyeballing *when and where* detection is good. Off by default (costs a color conversion + encode per frame) |
+
+To watch both cameras' detections live, turn it on for each tracker and open
+them with `ros2 run rqt_image_view rqt_image_view /tracker_a/debug_image`.
+Frames where the two cameras circle *different* objects are exactly the ones
+the triangulator's reprojection-error filter rejects.
 
 **`stereo_sync`** — pairs two `tracker` outputs by `header.stamp`
 (`message_filters.ApproximateTimeSynchronizer`) and republishes them as one
@@ -567,6 +579,12 @@ fell behind at ~90–125 Hz and **permanently lost frames** once
 output even after a 30 s wait) — the split design above is what actually
 works at this rate, not just an incremental tweak.
 
+`detection.py` crops to the ROI **before** the diff/threshold/morphology
+rather than working full-frame and masking afterwards, which is worth ~6.5×
+per frame (7.8 ms → 1.2 ms under load at 1440×1080 with the arena ROI) and
+lifts the per-camera ceiling from ~128 Hz to ~836 Hz. Verified to produce
+identical centroids on a full real session.
+
 ### Watching a trajectory live: `trajectory_plotter`
 
 A live matplotlib 3D plot of a position stream — for watching a trajectory
@@ -597,13 +615,199 @@ instead of growing into it.
 | `topic` | `/tracking/position_3d` | `geometry_msgs/PointStamped` input |
 | `max_points` | `500` | trailing window kept/drawn (`<=0` = unbounded) |
 | `redraw_hz` | `15.0` | plot refresh rate — decoupled from the message rate |
-| `xlim` / `ylim` / `zlim` | `""` | `"min,max"` to fix an axis; `""` = grow-to-fit then hold |
+| `xlim` / `ylim` / `zlim` | `""` | `"min,max"` to fix an axis (e.g. the arena); `""` = grow-to-fit then hold |
+| `equal_aspect` | `True` | one unit is the same length on all three axes, so fixed arena limits draw the arena's true shape rather than a cube |
 | `title` | `mosquito_preference_assay -- 3D trajectory` | window title |
 
 `synthetic_trajectory_publisher` params: `pattern` (`lissajous` default /
 `helix` / `random_walk`), `rate_hz` (30.0), `period_sec` (8.0, lissajous/helix),
 `scale_xy` / `scale_z` / `z_offset` (extent + center), `step_std` /`seed`
 (random_walk), `topic`, `frame_id`.
+
+---
+
+## 3D triangulation
+
+`triangulator` turns each synchronized stereo pair into a real 3D position,
+completing the chain:
+
+```
+dual_video_publisher ─┬─> tracker (cam_a) ─┐
+                      └─> tracker (cam_b) ─┴─> stereo_sync ─> triangulator ─> trajectory_plotter
+```
+
+```bash
+ros2 run mosquito_preference_assay triangulator --ros-args \
+    -p checkerboard_file:=/path/Checkerboard_2025_April_10.npy \
+    -p plumbline_file:=/path/Plumbline_2025_April_10.npy \
+    -p max_reprojection_error_px:=3.0
+```
+
+Output is `geometry_msgs/PointStamped` on `/tracking/position_3d` — real
+x/y/z in **mm**, in the calibration's world frame, carrying the original
+camera-frame stamp. `trajectory_plotter` subscribes to exactly this by
+default, so the two compose with no arguments.
+
+The math (undistort → `cv2.triangulatePoints` → axis remap → plumbline
+rotation → reprojection error) is a direct port of `triangulate()` from
+`validate_mosquito_centroid_tracking_vid_output.py` in the calibration set,
+run per message instead of over a recorded array — verified to reproduce it
+to 6e-11 mm.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `topic` | `/tracking/stereo_track` | `stereo_track/1` JSON input |
+| `output_topic` | `/tracking/position_3d` | `geometry_msgs/PointStamped` output, mm |
+| `checkerboard_file` | — | **required**, path to `Checkerboard_<date>.npy` |
+| `plumbline_file` | — | **required**, path to `Plumbline_<date>.npy` |
+| `frame_id` | `arena` | output `header.frame_id` |
+| `max_reprojection_error_px` | `0.0` | drop triangulations worse than this; `0` = keep all |
+| `log_every_n` | `200` | log rate + last reprojection error every N |
+
+**Calibration is rig-specific and is not shipped with this package** — point
+the two parameters at your rig's pair. Expected layout of the 27×5
+`Checkerboard` array (rows 6–11 and 20–26 exist but are unused, matching the
+reference script): `[0:3]` K0 · `[3:6]` K1 · `[12:15]` P0 · `[15:18]` P1 ·
+`[18:19]`/`[19:20]` distortion. `Plumbline` is 3×3, rotating the triangulated
+point into the gravity-aligned world frame.
+
+**Camera order matters.** `topic_a` must be the camera the calibration calls
+cam0. Getting it backwards still triangulates, but badly — on real footage
+the correct order gave a **0.25 px** median reprojection error versus
+**2.34 px** swapped, and 97% vs 70% of frames under 3 px. If your errors look
+high, try the swap before blaming the calibration.
+
+**Reprojection error is your per-frame quality signal.** It cleanly separates
+good frames from frames where the two cameras locked onto *different* objects
+— which is exactly what happens with two mosquitoes in the arena. Measured
+across five recorded sessions against one calibration:
+
+| session | median | p90 | ≤ 3 px | note |
+|---|---|---|---|---|
+| A (single mosquito) | 0.25 px | 0.59 | 97.3% | |
+| B (single mosquito) | 0.54 px | 0.86 | 99.2% | |
+| C | 2.50 px | **150.95** | 50.7% | two mosquitoes in the arena |
+| D | 0.88 px | **233.78** | 53.0% | likewise |
+| E | 1.47 px | 1.64 | 96.4% | recorded a day *before* the calibration |
+
+A blown-up p90 with a sane median means mismatched targets, not bad
+calibration. `max_reprojection_error_px:=3.0` filters them out.
+
+---
+
+## Benchmarking and latency
+
+Two tools for checking a machine keeps up — run them after moving to new
+hardware, before trusting it with live cameras.
+
+### `benchmark` — per-component cost, no messaging involved
+
+```bash
+ros2 run mosquito_preference_assay benchmark --ros-args \
+    -p frames:=/path/to/session/cam_a -p roi:=340,40,1260,1070 \
+    -p checkerboard_file:=/path/Checkerboard_<date>.npy \
+    -p plumbline_file:=/path/Plumbline_<date>.npy
+```
+
+Times each stage on real frames and reports the frame rate ceiling each one
+implies, so when the live pipeline misses a target you know what to blame.
+Sample (idle workstation, 1440×1080 mono):
+
+| stage | ms/frame | Hz ceiling | |
+|---|---|---|---|
+| decode frame file | 0.63 | 1577 | replay only |
+| detect, full frame | 1.55 | 643 | 1.56 Mpx |
+| detect, ROI | 0.68 | 1477 | 0.95 Mpx (61% of frame) |
+| cv_bridge encode | 1.33 | 752 | **does not shrink with the ROI** |
+| cv_bridge decode | 0.26 | 3910 | likewise |
+| triangulate one pair | 0.018 | 56094 | per pair, not per camera |
+
+Run it on an otherwise idle machine — the same detection measured 0.68 ms
+idle and 1.17 ms with a live pipeline running alongside.
+
+### `pipeline_monitor` — live per-stage lag and yield
+
+```bash
+ros2 run mosquito_preference_assay pipeline_monitor
+```
+
+Every stage forwards the *original* camera-frame stamp, so for each one
+`lag = wall clock - frame stamp` is the true age of that data. Comparing lag
+across stages localizes where latency accumulates; comparing counts shows
+where frames are lost:
+
+```
+=== pipeline report (4.0 s window) ===
+stage                 msgs   rate Hz  lag med     p90     p99     max
+cam_a position         767     191.7      4.3    16.8    26.5    27.1
+cam_b position         705     176.2     54.1    58.7    60.8    63.1
+stereo pairs           705     176.2     54.9    59.2    61.2    63.8
+3D positions           705     176.2     55.4    59.8    61.8    64.7
+yield: pairs/cam_a 91.9%, 3D/pairs 100.0%
+```
+
+Read that as: cam_b's tracker is 50 ms behind cam_a's, and since a pair can
+only complete once the slower camera arrives, **the whole pipeline inherits
+the slowest camera's lag**. Each report is also published as JSON on
+`~/report` (schema `mosquito_preference_assay/pipeline_report/1`), so a bag
+of a run carries its own timings.
+
+| Param | Default | Meaning |
+|---|---|---|
+| `report_period_sec` | `5.0` | reporting interval (`0` = only on shutdown) |
+| `watch_images` | `False` | also measure the image topics — costs full-frame bandwidth and can skew what you are measuring |
+| `publish_report` | `True` | publish each report as JSON on `~/report` |
+| `image_qos` | `sensor_data` | QoS for the image topics when `watch_images` is on |
+
+Two caveats worth knowing: **lag is wall clock minus stamp**, so it only
+means anything if whatever stamped the frames shares this machine's clock
+(same box is fine; a camera host elsewhere needs PTP/chrony or you are
+measuring clock offset). And leave `watch_images` off unless you need input
+accounting — receiving every full frame is real bandwidth.
+
+### One command for the whole thing
+
+```bash
+ros2 launch mosquito_preference_assay tracking_benchmark.launch.py \
+    session:=/path/to/session rate_hz:=200.0 \
+    checkerboard_file:=/path/Checkerboard_<date>.npy \
+    plumbline_file:=/path/Plumbline_<date>.npy
+```
+
+Brings up the full pipeline against recorded footage with the monitor
+attached. `session` must contain `cam_a/` and `cam_b/`. Omit the calibration
+arguments to benchmark tracking only. Useful arguments: `rate_hz`, `loop`,
+`roi_a`/`roi_b`, `image_qos`, `max_reprojection_error_px`, `plot:=true` for
+the live 3D view, `watch_images:=true` for input-rate accounting.
+
+### Measured: where the time goes at 200 fps
+
+End-to-end (image published → 3D point delivered), 776 real frame pairs:
+
+| Config | Median lag | Points (of 758) | Throughput |
+|---|---|---|---|
+| 200 Hz, `reliable` | 56 ms | 758 | 181 Hz |
+| 200 Hz, `sensor_data` | **7.2 ms** | 646 | 181 Hz |
+| 150 Hz, `sensor_data` | **6.9 ms** | 716 | 150 Hz |
+| 150 Hz, `reliable` | 16 ms | **758** | 150 Hz |
+
+**The `image_qos` choice is a real trade, not a tuning knob.** `reliable`
+queues (depth 10) rather than dropping, so every frame is processed but lag
+grows to roughly *queue depth × frame interval* under load — 56 ms ≈ 11
+frames at 200 Hz. `sensor_data` (best-effort) always works on the newest
+frame and discards stale ones: ~7 ms, at the cost of ~15% of frames when
+saturated. Use `sensor_data` for closed-loop triggering where freshness
+wins, `reliable` when recording a complete trajectory.
+
+Two things that are *not* levers, both measured: shrinking the ROI only
+touches the detection term (there is a ~3.6 ms floor even at 200×200 px,
+because the full frame is still encoded, shipped and decoded), and the ROI is
+already close to the flight envelope — detections span 850×787 px inside the
+920×1030 `cam_a` ROI, so trimming further starts clipping real flight near
+the arena walls. Cropping at the *camera* shrinks payload, encode, transport
+and detection together; keeping full frames from crossing a process boundary
+at all (detection in the camera node, or intra-process composition) removes
+the transport term entirely.
 
 ---
 

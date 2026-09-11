@@ -32,10 +32,17 @@ Parameters:
     morph_kernel     int     3
     log_every_n      int     200        log the achieved detected-frame rate
                                         every N (0 disables)
+    publish_debug_image  bool  False    publish ~/debug_image: the frame with the
+                                        ROI box and the accepted blob drawn on it,
+                                        for eyeballing WHEN and WHERE detection is
+                                        good. Off by default -- it costs a color
+                                        conversion + encode per frame, so it is not
+                                        in the normal hot path.
 """
 
 import time
 
+import cv2
 import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
@@ -62,10 +69,15 @@ class Tracker(Node):
         self._max_area = float(self.declare_parameter("max_area_px", 5000.0).value)
         self._morph_kernel = int(self.declare_parameter("morph_kernel", 3).value)
         self._log_every_n = int(self.declare_parameter("log_every_n", 200).value)
+        publish_debug = bool(self.declare_parameter("publish_debug_image", False).value)
 
         self._bridge = CvBridge()
         self._background = None
+        self._n_frames = 0
         self._pub = self.create_publisher(PointStamped, out_topic, 10)
+        self._debug_pub = (
+            self.create_publisher(Image, "~/debug_image", 1) if publish_debug else None
+        )
 
         image_qos = qos_profile_sensor_data if image_qos_kind == "sensor_data" else 10
         self._sub = self.create_subscription(Image, image_topic, self._on_image, image_qos)
@@ -90,14 +102,17 @@ class Tracker(Node):
             self.get_logger().info(f"captured background frame ({gray.shape[1]}x{gray.shape[0]})")
             return
 
+        self._n_frames += 1
         candidates = find_candidates(
             gray, self._background, diff_threshold=self._diff_threshold,
             min_area=self._min_area, max_area=self._max_area,
             morph_kernel=self._morph_kernel, roi=self._roi,
         )
-        if not candidates:
+        best = candidates[0] if candidates else None
+        if self._debug_pub is not None:
+            self._publish_debug(gray, best, len(candidates), msg.header)
+        if best is None:
             return
-        best = candidates[0]
 
         point = PointStamped()
         point.header.stamp = msg.header.stamp
@@ -116,6 +131,31 @@ class Tracker(Node):
                 f"(~{rate:.1f} Hz over the last {self._log_every_n})"
             )
             self._log_window_start = now
+
+    def _publish_debug(self, gray, best, n_candidates, header):
+        # BGR only for the annotation colors -- this path only runs when
+        # publish_debug_image is on, not in the normal hot path.
+        annotated = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        if self._roi is not None:
+            x0, y0, x1, y1 = self._roi
+            cv2.rectangle(annotated, (x0, y0), (x1, y1), (0, 255, 0), 1)
+
+        if best is not None:
+            cx, cy = int(round(best["cx"])), int(round(best["cy"]))
+            cv2.circle(annotated, (cx, cy), 10, (0, 255, 255), 2)
+            cv2.drawMarker(annotated, (cx, cy), (0, 255, 255), cv2.MARKER_CROSS, 13, 1)
+            label = (f"frame {self._n_frames}  ({cx}, {cy})  area {best['area']:.0f}"
+                     f"  {n_candidates} candidate(s)")
+            color = (0, 255, 255)
+        else:
+            label = f"frame {self._n_frames}  NO DETECTION"
+            color = (0, 0, 255)
+        cv2.putText(annotated, label, (20, 35), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.75, color, 2, cv2.LINE_AA)
+
+        out = self._bridge.cv2_to_imgmsg(annotated, encoding="bgr8")
+        out.header = header
+        self._debug_pub.publish(out)
 
 
 def main(args=None):
