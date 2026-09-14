@@ -35,7 +35,7 @@ stimuli:
     type: static_dark
     params: {fill_gray: 20}
 
-  # 3. dark circle wandering gently (Perlin noise, so it drifts, never jumps).
+  # 3. dark circle wandering (Perlin noise, so it drifts, never jumps).
   #
   #    seed_x/seed_y are pinned here, and pinned to the SAME values in
   #    jitter_large, so the two trace an identical path and differ in
@@ -48,17 +48,21 @@ stimuli:
     type: jitter
     params:
       fill_gray: 20
-      amplitude_px: 15
+      amplitude_px: 30
       noise_speed: 1.2
       seed_x: 111.0
       seed_y: 777.0
 
-  # 4. the same path, twice as far from center at every instant
+  # 4. the same path, twice as far from center at every instant.
+  #    +/-60 px on a 220 px circle: still far inside the gap between the
+  #    left and right positions (a quarter screen width apart), but wide
+  #    enough that a GIF of it needs a canvas of ~420 px, not the default
+  #    diameter + 80.
   jitter_large:
     type: jitter
     params:
       fill_gray: 20
-      amplitude_px: 30
+      amplitude_px: 60
       noise_speed: 1.2
       seed_x: 111.0
       seed_y: 777.0
@@ -68,6 +72,7 @@ stimuli:
     type: telescope
     params:
       ring_spacing_px: 18
+      color_a_gray: 255
       speed_px_per_sec: -50
 
   # 6. rings expanding out of the center -- the looming direction
@@ -75,6 +80,7 @@ stimuli:
     type: telescope
     params:
       ring_spacing_px: 18
+      color_a_gray: 255
       speed_px_per_sec: 50
 
   # 7. whole-field stripes drifting down (angle 90 = vertical travel, + = down)
@@ -84,6 +90,7 @@ stimuli:
       period_px: 24
       speed_px_per_sec: 40
       angle_deg: 90
+      color_a_gray: 255
 
   # 8. the same stripes drifting up
   grating_up:
@@ -92,6 +99,7 @@ stimuli:
       period_px: 24
       speed_px_per_sec: -40
       angle_deg: 90
+      color_a_gray: 255
 
   # 9. left half drifts right, right half drifts left: stripes converge on the
   #    vertical midline
@@ -102,6 +110,7 @@ stimuli:
       speed_px_per_sec: 40
       axis: horizontal
       direction: inward
+      color_a_gray: 255
 
   # 10. the same split, reversed: stripes stream out of the midline to the
   #     left and right
@@ -112,12 +121,17 @@ stimuli:
       speed_px_per_sec: 40
       axis: horizontal
       direction: outward
+      color_a_gray: 255
 
 conditions:
   mode: sample
 
 duration_sec: 30
 
+# background_gray 255 is white, and every patterned stimulus sets
+# color_a_gray: 255 so its light phase is the SAME white -- otherwise the
+# default 240 leaves each patterned circle sitting on a faintly grey disc
+# with a visible rim against the white surround.
 display:
   circle_diameter_px: 220
-  background_gray: 128
+  background_gray: 255

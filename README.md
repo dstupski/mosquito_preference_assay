@@ -285,8 +285,8 @@ looks identical in every trial it appears in:
 |---|---|---|
 | `blank` | `blank` | nothing drawn — the empty control |
 | `static_black` | `static_dark` | motionless dark circle |
-| `jitter_small` | `jitter` | wanders, amplitude 15 px |
-| `jitter_large` | `jitter` | **same path**, amplitude 30 px |
+| `jitter_small` | `jitter` | wanders, amplitude 30 px |
+| `jitter_large` | `jitter` | **same path**, amplitude 60 px |
 | `telescope_inward` | `telescope` | rings contracting toward the center |
 | `telescope_outward` | `telescope` | rings expanding — the looming direction |
 | `grating_down` | `moving_grating` | whole-field stripes drifting down |
@@ -298,6 +298,17 @@ The two jitter levels pin `seed_x`/`seed_y` to the *same* values, so they trace
 an identical path and differ in amplitude alone — a one-variable manipulation,
 and the reason they read as one motion at two sizes rather than two unrelated
 wanders. Delete those lines from both to get independent per-trial wander back.
+
+The panel is drawn on a **white** background (`background_gray: 255`), and
+every patterned stimulus sets `color_a_gray: 255` so its light phase is the
+same white — otherwise the default 240 leaves each patterned circle on a
+faintly grey disc with a visible rim. Set them back to 240 if you *want*
+the disc boundary visible.
+
+At ±60 px the large jitter needs a GIF canvas bigger than the default
+(diameter + 80) or the circle clips the edge — render the panel with
+`--size 420`. On screen there is far more room: the left and right
+positions sit a quarter screen-width apart.
 
 It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
 is sampled across enough animals); the file's header comment shows the
