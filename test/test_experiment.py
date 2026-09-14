@@ -4,6 +4,7 @@ Importing experiment.py pulls in py5 (via stimulus_types -> stimuli), which
 needs a Java 17 JVM; skipped cleanly if that isn't available.
 """
 
+import pathlib
 import random
 
 import pytest
@@ -149,3 +150,50 @@ def test_realize_resolves_random_params_and_duration():
     assert 3.0 <= plan.duration_sec <= 4.0
     params = plan.left_params if plan.left_name == "a" else plan.right_params
     assert 10.0 <= params["speed_px_per_sec"] <= 20.0
+
+
+# --- the experiment files actually shipped in experiments/ ----------------- #
+
+EXPERIMENTS_DIR = pathlib.Path(__file__).resolve().parent.parent / "experiments"
+
+
+def _shipped_experiments():
+    return sorted(EXPERIMENTS_DIR.glob("*.yaml"))
+
+
+def test_experiments_dir_is_not_empty():
+    assert _shipped_experiments(), f"no experiment files found in {EXPERIMENTS_DIR}"
+
+
+@pytest.mark.parametrize("path", _shipped_experiments(), ids=lambda p: p.stem)
+def test_shipped_experiment_loads_and_draws(path):
+    """Every shipped experiment must parse, validate (unknown stimulus types
+    and misspelled params raise here), and be able to produce a trial."""
+    experiment = Experiment.from_file(str(path))
+    assert experiment.stimuli
+    plan = experiment.realize(experiment.draw(random.Random(0)), random.Random(0))
+    assert plan.left_name in experiment.stimuli
+    assert plan.right_name in experiment.stimuli
+    assert plan.duration_sec > 0
+
+
+def test_ten_stimulus_panel_has_the_expected_ten():
+    experiment = Experiment.from_file(str(EXPERIMENTS_DIR / "ten_stimulus_panel.yaml"))
+    assert set(experiment.stimuli) == {
+        "blank", "static_black", "jitter_small", "jitter_large",
+        "telescope_inward", "telescope_outward", "grating_down", "grating_up",
+        "grating_inward", "grating_outward",
+    }
+    params = {name: spec.params for name, spec in experiment.stimuli.items()}
+    # the two directional pairs must actually oppose each other
+    assert params["telescope_inward"]["speed_px_per_sec"] < 0 < \
+        params["telescope_outward"]["speed_px_per_sec"]
+    assert params["grating_up"]["speed_px_per_sec"] < 0 < \
+        params["grating_down"]["speed_px_per_sec"]
+    assert params["grating_inward"]["direction"] == "inward"
+    assert params["grating_outward"]["direction"] == "outward"
+    # jitter pair differs in amplitude alone
+    small, large = params["jitter_small"], params["jitter_large"]
+    assert large["amplitude_px"] > small["amplitude_px"]
+    assert small["seed_x"] == large["seed_x"] and small["seed_y"] == large["seed_y"]
+    assert small["noise_speed"] == large["noise_speed"]

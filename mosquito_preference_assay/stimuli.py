@@ -50,6 +50,15 @@ class Stimulus:
         return {}
 
 
+# --- 0. Blank: nothing is drawn at all, so the arena background shows ---
+# --- through. An empty-side control for a two-choice trial. ---
+class BlankStimulus(Stimulus):
+    type_name = "blank"
+
+    def display(self, cx, cy, t):
+        pass  # deliberately nothing -- "no stimulus on this side"
+
+
 # --- 1. Static dark circle: no motion at all. The baseline/control marker. ---
 class StaticDarkStimulus(Stimulus):
     type_name = "static_dark"
@@ -105,7 +114,10 @@ class JitterStimulus(Stimulus):
 
 
 # --- 3. Moving grating: black/white stripes drifting across the circle ---
-# --- at a constant velocity (a classic optomotor-style stimulus). ---
+# --- at a constant velocity (a classic optomotor-style stimulus).      ---
+# --- angle_deg sets the axis of travel, and the SIGN of                ---
+# --- speed_px_per_sec sets which way along it: with angle_deg=90,      ---
+# --- positive drifts DOWN the screen and negative drifts UP.           ---
 class MovingGratingStimulus(Stimulus):
     type_name = "moving_grating"
 
@@ -161,7 +173,9 @@ class MovingGratingStimulus(Stimulus):
 
 
 # --- 4. Telescope: concentric rings that appear to continuously expand ---
-# --- outward from the center -- a hypnotic "tunnel" effect. ---
+# --- outward from the center -- a hypnotic "tunnel" effect. A NEGATIVE ---
+# --- speed_px_per_sec runs it the other way: rings contract inward     ---
+# --- toward the center (receding rather than looming).                 ---
 class TelescopeStimulus(Stimulus):
     type_name = "telescope"
 
@@ -197,6 +211,88 @@ class TelescopeStimulus(Stimulus):
         return {
             "ring_spacing_px": self.ring_spacing_px,
             "speed_px_per_sec": self.speed_px_per_sec,
+            "color_a_gray": self.color_a_gray,
+            "color_b_gray": self.color_b_gray,
+        }
+
+
+# --- 5. Split grating: the circle is halved, and the stripes in each half ---
+# --- drift in OPPOSITE directions -- either converging on the dividing   ---
+# --- line or streaming away from it. Unlike moving_grating (one uniform  ---
+# --- direction everywhere) this produces an expansion/contraction edge   ---
+# --- down the middle, without the radial geometry of telescope.          ---
+class SplitGratingStimulus(Stimulus):
+    type_name = "split_grating"
+
+    def __init__(self, diameter_px, period_px=24, speed_px_per_sec=40,
+                 axis="horizontal", direction="inward",
+                 color_a_gray=240, color_b_gray=20):
+        super().__init__(diameter_px)
+        if axis not in ("horizontal", "vertical"):
+            raise ValueError(f"axis must be 'horizontal' or 'vertical', got {axis!r}")
+        if direction not in ("inward", "outward"):
+            raise ValueError(
+                f"direction must be 'inward' or 'outward', got {direction!r}")
+        self.period_px = period_px
+        self.speed_px_per_sec = speed_px_per_sec
+        self.axis = axis
+        self.direction = direction
+        self.color_a_gray = color_a_gray
+        self.color_b_gray = color_b_gray
+        self._color_a = py5.color(color_a_gray)
+        self._color_b = py5.color(color_b_gray)
+        self._buf = None
+        self._buf_diameter = None
+
+    def display(self, cx, cy, t):
+        d = round(self.diameter_px)
+        if self._buf is None or self._buf_diameter != d:
+            self._buf = py5.create_graphics(d, d)
+            self._buf_diameter = d
+
+        buf = self._buf
+        buf.begin_draw()
+        buf.background(self._color_a)
+        buf.no_stroke()
+        buf.fill(self._color_b)
+
+        half = d / 2.0
+        # The half nearer the origin of its axis moves +, the far half moves -,
+        # for "inward"; "outward" is the same thing with both signs flipped.
+        near_sign = 1.0 if self.direction == "inward" else -1.0
+        self._draw_half(buf, d, t, 0.0, half, near_sign)
+        self._draw_half(buf, d, t, half, float(d), -near_sign)
+
+        buf.end_draw()
+        buf.mask(circle_mask(d))
+        py5.image_mode(py5.CENTER)
+        py5.image(buf, cx, cy)
+
+    def _draw_half(self, buf, d, t, start, end, sign):
+        """Stripes across [start, end) along the motion axis, drifting in
+        `sign`'s direction. Bars are clamped to the half rather than clipped,
+        so the two halves never bleed into each other."""
+        period = self.period_px
+        bar = period / 2.0
+        offset = (t * self.speed_px_per_sec * sign) % period
+
+        position = start - period + offset
+        while position < end:
+            lo = max(position, start)
+            hi = min(position + bar, end)
+            if hi > lo:
+                if self.axis == "horizontal":
+                    buf.rect(lo, 0, hi - lo, d)
+                else:
+                    buf.rect(0, lo, d, hi - lo)
+            position += period
+
+    def _params(self):
+        return {
+            "period_px": self.period_px,
+            "speed_px_per_sec": self.speed_px_per_sec,
+            "axis": self.axis,
+            "direction": self.direction,
             "color_a_gray": self.color_a_gray,
             "color_b_gray": self.color_b_gray,
         }

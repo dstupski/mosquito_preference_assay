@@ -17,7 +17,7 @@ graphics; ROS 2 Humble for the plumbing.
 - [How it works](#how-it-works)
 - [Setup](#setup) · [dependency reference](#dependency-reference)
 - [Quick start](#quick-start)
-- [Writing an experiment](#writing-an-experiment)
+- [Writing an experiment](#writing-an-experiment) · [ten-stimulus panel](#the-ten-stimulus-panel) · [stimulus GIFs](#rendering-stimulus-gifs)
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
 - [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher) · [`dual_video_publisher`](#two-synchronized-cameras-dual_video_publisher)
 - [Real-time stereo tracking](#real-time-stereo-tracking) — `tracker` + `stereo_sync`
@@ -48,10 +48,19 @@ instances* of them:
 
 | `type` | Behavior |
 |---|---|
+| `blank` | Nothing drawn at all — an empty side, for a stimulus-vs-nothing trial |
 | `static_dark` | Plain dark circle, no motion — baseline / control |
 | `jitter` | Dark circle whose position wanders smoothly (Perlin noise) |
 | `moving_grating` | Black/white stripes drifting across the circle (optomotor-style) |
+| `split_grating` | The circle halved, each half's stripes drifting the *opposite* way — converging on the midline or streaming out of it |
 | `telescope` | Concentric rings expanding outward — tunnel effect |
+
+**Direction is the sign of the speed.** `speed_px_per_sec` negative runs a
+`telescope` inward (rings contracting) instead of outward, and reverses a
+`moving_grating` along its `angle_deg` axis — with `angle_deg: 90`, positive
+drifts down and negative drifts up. `split_grating` takes an explicit
+`direction: inward | outward` and `axis: horizontal | vertical` instead,
+since "which way" there means two things at once.
 
 The **ROS node** (`stimulus_publisher`) runs the sketch and publishes: the
 static run metadata once on `~/experiment_info`, and the trial state on
@@ -92,6 +101,11 @@ experiments/                   experiment definitions (installed to share/)
   two_choice_default.yaml       random draw of 2 markers (also the built-in default)
   control_vs_grating.yaml       mode: pairs — control vs a random grating band
   single_trigger.yaml           triggered 15 s trial, then everything concludes
+  ten_stimulus_panel.yaml       10-stimulus panel: blank, static, 2 jitter levels,
+                                 telescope in/out, gratings up/down/in/out
+tools/
+  render_stimulus_gifs.py       render an animated GIF of every stimulus in an
+                                 experiment file (for talks / checking a stimulus)
 config/
   assay_params.yaml             operational ROS params for stimulus_publisher
   detector_params.yaml          ROS params for mosquito_detector
@@ -260,6 +274,51 @@ preference-assay design.
 Give a `pairs:` list; one entry is picked at random for the trial. `{a: X, b: Y}`
 randomizes which side each lands on; `{left: X, right: Y}` fixes them. Use it for
 a control-vs-treatment design (see `experiments/control_vs_grating.yaml`).
+
+### The ten-stimulus panel
+
+`experiments/ten_stimulus_panel.yaml` is a ready-made pool covering the main
+motion axes, with every parameter fixed (no random specs) so a given stimulus
+looks identical in every trial it appears in:
+
+| Name | Type | What it does |
+|---|---|---|
+| `blank` | `blank` | nothing drawn — the empty control |
+| `static_black` | `static_dark` | motionless dark circle |
+| `jitter_small` | `jitter` | wanders, amplitude 15 px |
+| `jitter_large` | `jitter` | **same path**, amplitude 30 px |
+| `telescope_inward` | `telescope` | rings contracting toward the center |
+| `telescope_outward` | `telescope` | rings expanding — the looming direction |
+| `grating_down` | `moving_grating` | whole-field stripes drifting down |
+| `grating_up` | `moving_grating` | the same drifting up |
+| `grating_inward` | `split_grating` | halves converge on the vertical midline |
+| `grating_outward` | `split_grating` | halves stream out to left and right |
+
+The two jitter levels pin `seed_x`/`seed_y` to the *same* values, so they trace
+an identical path and differ in amplitude alone — a one-variable manipulation,
+and the reason they read as one motion at two sizes rather than two unrelated
+wanders. Delete those lines from both to get independent per-trial wander back.
+
+It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
+is sampled across enough animals); the file's header comment shows the
+`mode: pairs` block to paste in for a control-versus-each design instead.
+
+### Rendering stimulus GIFs
+
+```bash
+python3 tools/render_stimulus_gifs.py \
+    --experiment experiments/ten_stimulus_panel.yaml --out-dir ./stimulus_gifs
+```
+
+Writes one animated GIF per stimulus — for talks and posters, and for checking
+at a glance that a stimulus does what its name says. The frames come from the
+**real stimulus classes in a real py5 sketch**, driven from the experiment
+YAML, so a GIF cannot drift from what the assay actually displays: change a
+parameter, re-render, and the GIF changes with it. Needs py5 (so Java 17), a
+display, and Pillow.
+
+Options: `--seconds` (3.0), `--fps` (20), `--size` (circle diameter + 80),
+`--only NAME [...]` to render a subset, `--keep-frames` to keep the PNGs.
 
 ### Choosing an experiment at launch
 

@@ -5,16 +5,20 @@ maps a ``type`` string to its class and builds one from a resolved params dict.
 """
 
 from .stimuli import (
+    BlankStimulus,
     JitterStimulus,
     MovingGratingStimulus,
+    SplitGratingStimulus,
     StaticDarkStimulus,
     TelescopeStimulus,
 )
 
 STIMULUS_TYPES = {
+    "blank": BlankStimulus,
     "static_dark": StaticDarkStimulus,
     "jitter": JitterStimulus,
     "moving_grating": MovingGratingStimulus,
+    "split_grating": SplitGratingStimulus,
     "telescope": TelescopeStimulus,
 }
 

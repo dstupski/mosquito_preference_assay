@@ -1,0 +1,123 @@
+# A ten-stimulus panel: one empty control, two static/near-static circles, two
+# jitter levels, the two telescope directions, and four grating motions (two
+# whole-field, two split).
+#
+# Every parameter here is a fixed value, not a random spec -- the point of this
+# panel is that a given stimulus looks the same in every trial it appears in,
+# so trials are comparable across the whole set (and so the GIFs rendered from
+# this file are faithful to what the animal actually sees). Swap in
+# {uniform: [lo, hi]} on any of them if you want it varied per trial.
+#
+# Pairing: mode: sample draws TWO DISTINCT stimuli from the pool at random each
+# trial, so across enough animals every pairing is sampled. For a
+# control-versus-each design instead, replace the conditions block with:
+#
+#   conditions:
+#     mode: pairs
+#     pairs:
+#       - {a: blank, b: static_black}
+#       - {a: blank, b: jitter_small}
+#       ...            # one line per comparison; {a,b} randomizes sides
+#
+schema: mosquito_preference_assay/experiment/1
+name: ten_stimulus_panel
+description: >-
+  Ten-stimulus visual panel: blank, static, two jitter amplitudes, telescope
+  in/out, gratings up/down, and split gratings converging/diverging.
+
+stimuli:
+  # 1. nothing at all on this side -- the empty control
+  blank:
+    type: blank
+
+  # 2. motionless dark circle -- the "something is there, but still" control
+  static_black:
+    type: static_dark
+    params: {fill_gray: 20}
+
+  # 3. dark circle wandering gently (Perlin noise, so it drifts, never jumps).
+  #
+  #    seed_x/seed_y are pinned here, and pinned to the SAME values in
+  #    jitter_large, so the two trace an identical path and differ in
+  #    amplitude alone -- a clean one-variable manipulation, and the reason
+  #    the two look like the same motion at two sizes rather than two
+  #    unrelated wanders. Left unset (the usual case) they are drawn from the
+  #    trial RNG instead, so every instance wanders independently; delete
+  #    these two lines from both stimuli to get that back.
+  jitter_small:
+    type: jitter
+    params:
+      fill_gray: 20
+      amplitude_px: 15
+      noise_speed: 1.2
+      seed_x: 111.0
+      seed_y: 777.0
+
+  # 4. the same path, twice as far from center at every instant
+  jitter_large:
+    type: jitter
+    params:
+      fill_gray: 20
+      amplitude_px: 30
+      noise_speed: 1.2
+      seed_x: 111.0
+      seed_y: 777.0
+
+  # 5. rings contracting toward the center (negative speed = inward)
+  telescope_inward:
+    type: telescope
+    params:
+      ring_spacing_px: 18
+      speed_px_per_sec: -50
+
+  # 6. rings expanding out of the center -- the looming direction
+  telescope_outward:
+    type: telescope
+    params:
+      ring_spacing_px: 18
+      speed_px_per_sec: 50
+
+  # 7. whole-field stripes drifting down (angle 90 = vertical travel, + = down)
+  grating_down:
+    type: moving_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: 40
+      angle_deg: 90
+
+  # 8. the same stripes drifting up
+  grating_up:
+    type: moving_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: -40
+      angle_deg: 90
+
+  # 9. left half drifts right, right half drifts left: stripes converge on the
+  #    vertical midline
+  grating_inward:
+    type: split_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: 40
+      axis: horizontal
+      direction: inward
+
+  # 10. the same split, reversed: stripes stream out of the midline to the
+  #     left and right
+  grating_outward:
+    type: split_grating
+    params:
+      period_px: 24
+      speed_px_per_sec: 40
+      axis: horizontal
+      direction: outward
+
+conditions:
+  mode: sample
+
+duration_sec: 30
+
+display:
+  circle_diameter_px: 220
+  background_gray: 128
