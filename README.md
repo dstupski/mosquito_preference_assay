@@ -106,6 +106,8 @@ experiments/                   experiment definitions (installed to share/)
 tools/
   render_stimulus_gifs.py       render an animated GIF of every stimulus in an
                                  experiment file (for talks / checking a stimulus)
+media/stimulus_gifs/           the rendered GIFs, committed so they are usable
+                                 without a py5/Java/display setup
 config/
   assay_params.yaml             operational ROS params for stimulus_publisher
   detector_params.yaml          ROS params for mosquito_detector
@@ -330,6 +332,12 @@ display, and Pillow.
 
 Options: `--seconds` (3.0), `--fps` (20), `--size` (circle diameter + 80),
 `--only NAME [...]` to render a subset, `--keep-frames` to keep the PNGs.
+
+The current renders of the ten-stimulus panel are committed under
+[`media/stimulus_gifs/`](media/stimulus_gifs/) — ten GIFs plus a contact sheet
+of all of them as stills — so they can be picked up on another machine without
+installing py5. They are generated files: re-render them after changing the
+panel, or they will quietly go stale.
 
 ### Choosing an experiment at launch
 
