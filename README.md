@@ -106,6 +106,8 @@ experiments/                   experiment definitions (installed to share/)
 tools/
   render_stimulus_gifs.py       render an animated GIF of every stimulus in an
                                  experiment file (for talks / checking a stimulus)
+  render_tracking_video.py      render a presentation video: both camera feeds with
+                                 detections + the 3D flight path building up
 media/stimulus_gifs/           the rendered GIFs, committed so they are usable
                                  without a py5/Java/display setup
 config/
@@ -857,6 +859,39 @@ attached. `session` must contain `cam_a/` and `cam_b/`. Omit the calibration
 arguments to benchmark tracking only. Useful arguments: `rate_hz`, `loop`,
 `roi_a`/`roi_b`, `image_qos`, `max_reprojection_error_px`, `plot:=true` for
 the live 3D view, `watch_images:=true` for input-rate accounting.
+
+### A presentation video of a tracked flight
+
+```bash
+python3 tools/render_tracking_video.py \
+    --session /path/to/session \
+    --checkerboard-file /path/Checkerboard_<date>.npy \
+    --plumbline-file /path/Plumbline_<date>.npy \
+    --out flight.mp4
+```
+
+Both camera feeds side by side with their detections circled, next to the 3D
+flight path building up frame by frame — one figure, for talks.
+
+It runs the same `detection.py` and `triangulator_node` math the live pipeline
+runs, frame for frame, so the positions and reprojection errors on screen are
+the ones the pipeline produces. It renders **offline** rather than
+screen-capturing a live run, which is what makes it frame-accurate: nothing is
+dropped because a node fell behind, and playback speed is whatever reads best
+rather than whatever the machine managed on the day. (If you want to show the
+live system's real-time behavior instead, screen-capture
+`tracking_benchmark.launch.py` with `plot:=true`.)
+
+Camera panels are cropped to the detection ROI by default, since that ROI is
+essentially the arena — `--full-frame` shows the whole sensor with the ROI
+drawn on instead. Axis limits default to the flight's own extent, so the box
+is fixed for the whole video; pass `--xlim/--ylim/--zlim` to pin the same box
+across several sessions so they can be compared.
+
+Options: `--fps` (30), `--trail N` to show only the last N points instead of
+the whole path, `--downscale` (2), `--max-reprojection-error-px` (3.0),
+`--limit N` for a quick look at the first N frames, `--out x.gif` for a GIF
+instead of mp4 (mp4 needs ffmpeg).
 
 ### Measured: where the time goes at 200 fps
 
