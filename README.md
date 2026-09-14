@@ -286,7 +286,7 @@ looks identical in every trial it appears in:
 | `blank` | `blank` | nothing drawn — the empty control |
 | `static_black` | `static_dark` | motionless dark circle |
 | `jitter_small` | `jitter` | wanders, amplitude 30 px |
-| `jitter_large` | `jitter` | **same path**, amplitude 60 px |
+| `jitter_large` | `jitter` | **same path**, amplitude 80 px (2.7x) |
 | `telescope_inward` | `telescope` | rings contracting toward the center |
 | `telescope_outward` | `telescope` | rings expanding — the looming direction |
 | `grating_down` | `moving_grating` | whole-field stripes drifting down |
@@ -305,7 +305,7 @@ same white — otherwise the default 240 leaves each patterned circle on a
 faintly grey disc with a visible rim. Set them back to 240 if you *want*
 the disc boundary visible.
 
-At ±60 px the large jitter needs a GIF canvas bigger than the default
+At ±80 px the large jitter needs a GIF canvas bigger than the default
 (diameter + 80) or the circle clips the edge — render the panel with
 `--size 420`. On screen there is far more room: the left and right
 positions sit a quarter screen-width apart.

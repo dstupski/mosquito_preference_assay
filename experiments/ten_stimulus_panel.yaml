@@ -53,8 +53,10 @@ stimuli:
       seed_x: 111.0
       seed_y: 777.0
 
-  # 4. the same path, twice as far from center at every instant.
-  #    +/-60 px on a 220 px circle: still far inside the gap between the
+  # 4. the same path as jitter_small, but 80/30 = 2.7x as far from center
+  #    at every instant. The pinned seeds are what make it the same path;
+  #    the ratio is free to be whatever reads best.
+  #    +/-80 px on a 220 px circle: still far inside the gap between the
   #    left and right positions (a quarter screen width apart), but wide
   #    enough that a GIF of it needs a canvas of ~420 px, not the default
   #    diameter + 80.
@@ -62,7 +64,7 @@ stimuli:
     type: jitter
     params:
       fill_gray: 20
-      amplitude_px: 60
+      amplitude_px: 80
       noise_speed: 1.2
       seed_x: 111.0
       seed_y: 777.0
