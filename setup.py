@@ -28,6 +28,8 @@ setup(
         "console_scripts": [
             "stimulus_publisher = mosquito_preference_assay.stimulus_publisher_node:main",
             "test_trigger = mosquito_preference_assay.test_trigger_node:main",
+            "snapshot_supervisor = "
+            "mosquito_preference_assay.snapshot_supervisor_node:main",
             "mosquito_detector = mosquito_preference_assay.mosquito_detector_node:main",
             "video_publisher = mosquito_preference_assay.video_publisher_node:main",
             "dual_video_publisher = mosquito_preference_assay.dual_video_publisher_node:main",

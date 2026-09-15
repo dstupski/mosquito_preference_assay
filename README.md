@@ -15,7 +15,7 @@ graphics; ROS 2 Humble for the plumbing.
 ## Contents
 
 - [How it works](#how-it-works)
-- [Setup](#setup) · [dependency reference](#dependency-reference)
+- [Setup](#setup) · [choosing the display](#choosing-the-display) · [dependency reference](#dependency-reference)
 - [Quick start](#quick-start)
 - [Writing an experiment](#writing-an-experiment) · [ten-stimulus panel](#the-ten-stimulus-panel) · [stimulus GIFs](#rendering-stimulus-gifs)
 - [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
@@ -84,6 +84,7 @@ mosquito_preference_assay/
   assay.py                     the py5 sketch + thread-safe current_state()
   stimulus_publisher_node.py   the ROS 2 node
   test_trigger_node.py         bench helper: publish the Bool trigger on command
+  snapshot_supervisor_node.py  flushes a --snapshot-mode bag at trial start / end
   detection.py                 background-subtraction blob detection (ported
                                 from test_videos_particle_tracking)
   mosquito_detector_node.py    watches a camera feed, publishes detection events
@@ -108,6 +109,7 @@ tools/
                                  experiment file (for talks / checking a stimulus)
   render_tracking_video.py      render a presentation video: both camera feeds with
                                  detections + the 3D flight path building up
+  list_displays.py              which display is which, for picking `monitor`
 media/stimulus_gifs/           the rendered GIFs, committed so they are usable
                                  without a py5/Java/display setup
 config/
@@ -117,6 +119,8 @@ launch/
   assay.launch.py               stimulus_publisher + its params file
   detector.launch.py            mosquito_detector + its params file
   triggered_capture.launch.py   stimulus_publisher (triggered) + ros2 bag record + auto-shutdown
+  triggered_assay.launch.py     the rig workflow: display ARMED on the projector +
+                                 detector + recorder, stimuli appear on detection
   tracking_benchmark.launch.py  whole tracking pipeline + pipeline_monitor, on recorded footage
 test/                          unit + lint tests
 ```
@@ -161,6 +165,58 @@ ros2 run mosquito_preference_assay assay
 If step 6 shows two circles and prints `[assay] trial 0: ...`, you're set —
 go to [Quick start](#quick-start). If `import py5` fails, see **`JAVA_HOME`**
 below.
+
+### Choosing the display
+
+The stimulus display is selected with two ROS params, so the same build runs on
+a laptop screen or a projector without edits:
+
+| Param | Meaning |
+|---|---|
+| `fullscreen` | `true` for the mosquito-facing display |
+| `monitor` | `""` primary · `N` that display (1-based) · `span` all of them |
+| `window_pos` | windowed only: `"x,y"` on the virtual desktop, e.g. `"1920,0"` |
+
+**Finding which `N` the projector is.** `monitor` is handed to Processing's
+`full_screen(N)`, which indexes the Java AWT screen-device list — *not*
+necessarily the order xrandr prints or the order shown in your desktop
+settings. Ask directly:
+
+```bash
+python3 tools/list_displays.py
+```
+
+```
+  monitor:= resolution   position     awt id     output
+  1         1920x1080    +0+0         :0.0       HDMI-0  [primary]
+  2         2560x1440    +1920+0      :0.1       DP-0
+```
+
+When two displays share a resolution the output names can't disambiguate them,
+so confirm by eye — this opens a fullscreen panel showing the index on each
+screen in turn:
+
+```bash
+python3 tools/list_displays.py --identify        # every display
+python3 tools/list_displays.py --identify 2      # just this one
+```
+
+A `monitor` that doesn't exist now fails at startup with the list of what does,
+instead of a Java traceback several frames later. Whichever display it ends up
+on is recorded in every `stimulus_state` / `trial_start` message under
+`geometry.display` (index, resolution, position), so a bag says which physical
+screen the animal was actually shown:
+
+```json
+"display": {"index": 2, "id": ":0.1", "width": 2560, "height": 1440, "x": 1920, "y": 0}
+```
+
+**Stop the projector blanking.** An idle X session will blank the screen and
+DPMS will power it down mid-experiment. On the rig machine:
+
+```bash
+xset s off; xset s noblank; xset -dpms
+```
 
 ### Dependency reference
 
@@ -422,6 +478,72 @@ ros2 launch mosquito_preference_assay triggered_capture.launch.py
 
 The node's `exit_grace_sec` (default 2 s) keeps it alive briefly after the
 trial so the trailing `phase: "complete"` messages land in the bag.
+
+### Detector-armed capture — the rig workflow
+
+`triggered_assay.launch.py` is `triggered_capture` plus the detector, wired
+together: the display comes up **ARMED on the projector before the animal is
+introduced**, and the stimuli appear only when a mosquito is found. The point
+is *when* the costs are paid — booting the JVM and opening a fullscreen window
+takes seconds, and that happens at launch, not at detection.
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    fullscreen:=true monitor:=2
+```
+
+```
+launch ──> recorder up (discovered, so nothing is missed later)
+      ├──> stimulus_publisher opens on the projector, sits ARMED drawing
+      │      only the background
+      └──> mosquito_detector starts after detector_delay and watches
+                    │
+  mosquito detected ──> detection_event IS the trigger ──> stimuli appear
+                    │
+       15 s later ──> trial completes ──> node exits ──> bag finalized
+```
+
+**Measured on real footage: 14 ms from the detector seeing the mosquito to the
+stimuli being on screen** — about one frame at 60 fps. (Compare the
+`detection_event`'s `stamp_wall` with `trial_start`'s `trial_start_wall` in the
+bag to re-measure on your rig.)
+
+Bagging is unchanged: the node still exits when its trial ends, which still
+fires `OnProcessExit → Shutdown`, which still SIGINTs the recorder so
+`metadata.yaml` is written. One launch = one animal = one bag.
+
+| Launch arg | Default | |
+|---|---|---|
+| `fullscreen` / `monitor` | `false` / `""` | the projector — see [Choosing the display](#choosing-the-display) |
+| `detector_params` | `config/detector_params.yaml` | detector tuning |
+| `image_topic` | `""` | `""` leaves the params file authoritative |
+| `trigger_topic` | `/arena/mosquito_present` | the launch file forces **both** ends onto this, rather than trusting two config files to agree |
+| `detector_delay` | `4.0` | seconds before the detector starts |
+| `record_mode` | `continuous` | `continuous` \| `snapshot` \| `none` |
+| `record_all` | `true` | `-a` (includes camera feeds) vs assay + detection only |
+| `experiment_file` / `bag_dir` / `master_seed` | | as above |
+
+**`record_mode`.** `continuous` writes from launch — simple, no discovery race,
+and the only mode that can take raw camera video. `snapshot` runs the recorder
+in `--snapshot-mode`, buffering in RAM and writing only when the trigger fires,
+so waiting for an animal costs nothing on disk; `snapshot_supervisor` calls
+`/rosbag2_recorder/snapshot` at trial start and at completion. That buffer is
+bounded by `--max-cache-size` (100 MiB default), which is ample for the assay
+and tracking topics and **far too small for raw camera feeds**:
+
+| Camera rate | Two 1440×1080 feeds | 15 s trial |
+|---|---|---|
+| 200 fps | 622 MB/s | 9.3 GB |
+| 100 fps | 311 MB/s | 4.7 GB |
+| 60 fps | 187 MB/s | 2.8 GB |
+| 30 fps | 93 MB/s | 1.4 GB |
+
+So: `snapshot` for the small topics, `continuous` when you want the video.
+
+A detection that arrives before the sketch is armed **cannot** run a trial.
+That used to fail silently — the animal was lost and nothing said so. The node
+now refuses such a trigger with a `TRIGGER REFUSED` warning, and
+`detector_delay` is what stops it arising in the first place.
 
 ---
 

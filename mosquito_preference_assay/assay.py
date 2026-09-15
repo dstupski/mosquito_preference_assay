@@ -113,6 +113,7 @@ _rt = {
     "left_name": "",
     "right_name": "",
     "geometry": {},
+    "display": None,      # the screen the sketch actually opened on
     "show_debug": True,
     "phase": "armed",     # "armed" | "running" | "complete"
     "run_id": 0,          # increments each start_run(); 0 while never triggered
@@ -140,23 +141,135 @@ def set_trial_change_callback(fn):
 # --------------------------------------------------------------------------- #
 # sketch
 # --------------------------------------------------------------------------- #
+def screen_displays():
+    """The attached displays, in the order `monitor` / full_screen(N) numbers
+    them (1-based, the Java AWT screen-device order). Returns [] if the JVM
+    cannot be queried. `tools/list_displays.py` prints this cross-referenced
+    with xrandr, and can flash the index on each screen to identify it."""
+    try:
+        from jpype import JClass
+        environment = JClass(
+            "java.awt.GraphicsEnvironment").getLocalGraphicsEnvironment()
+        out = []
+        for index, device in enumerate(environment.getScreenDevices(), start=1):
+            mode = device.getDisplayMode()
+            bounds = device.getDefaultConfiguration().getBounds()
+            out.append({
+                "index": index,
+                "id": str(device.getIDstring()),
+                "width": int(mode.getWidth()),
+                "height": int(mode.getHeight()),
+                "x": int(bounds.x),
+                "y": int(bounds.y),
+            })
+        return out
+    except Exception:                                   # noqa: BLE001
+        return []
+
+
+def _resolve_monitor():
+    """Validate `monitor` against the displays actually attached, so a wrong
+    index fails with something readable instead of a Java traceback several
+    frames later. Returns (mode, index) where mode is "default"/"span"/"index"."""
+    mon = _cfg["monitor"]
+    if mon in (None, 0, "", "0"):
+        return "default", None
+    if str(mon).lower() == "span":
+        return "span", None
+
+    try:
+        index = int(mon)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"monitor={mon!r} is not valid: use '' (primary), a 1-based display "
+            f"number, or 'span'"
+        ) from None
+
+    displays = screen_displays()
+    if displays and not 1 <= index <= len(displays):
+        listing = "\n".join(
+            f"    monitor:={d['index']}  {d['width']}x{d['height']} "
+            f"at +{d['x']}+{d['y']}  ({d['id']})" for d in displays)
+        raise ValueError(
+            f"monitor={index} does not exist -- this machine has "
+            f"{len(displays)} display(s):\n{listing}\n"
+            f"    (run tools/list_displays.py --identify to see which is which)"
+        )
+    return "index", index
+
+
 def settings():
     # size() / full_screen() must run here, before the sketch surface exists.
     if _cfg["fullscreen"]:
-        mon = _cfg["monitor"]
-        if mon in (None, 0, "", "0"):
+        mode, index = _resolve_monitor()
+        if mode == "default":
             py5.full_screen()
-        elif str(mon).lower() == "span":
+        elif mode == "span":
             py5.full_screen(py5.SPAN)
         else:
-            py5.full_screen(int(mon))
+            py5.full_screen(index)
     else:
         py5.size(_cfg["window_w"], _cfg["window_h"])
+
+
+def _update_geometry(experiment, w=None, h=None, left_c=None, right_c=None):
+    """Record where on screen the trial is being drawn.
+
+    Called from setup() as well as draw() so the FIRST published message
+    already carries it: trial_start is emitted from _begin_trial(), which runs
+    on the frame *before* draw() reaches its geometry block, so without this
+    the most important per-trial record would carry an empty geometry."""
+    if experiment is None:
+        return
+    if w is None:
+        w, h = py5.width, py5.height
+    if left_c is None:
+        left_c = _resolve_center("left", experiment, w, h)
+        right_c = _resolve_center("right", experiment, w, h)
+    with _lock:
+        _rt["geometry"] = {
+            "window_w": w,
+            "window_h": h,
+            "fullscreen": bool(_cfg["fullscreen"]),
+            "monitor": _cfg["monitor"],
+            # which display it ACTUALLY landed on, not just what was asked
+            # for, so a bag records the physical screen the animal was shown
+            "display": _rt.get("display"),
+            "circle_diameter_px": experiment.circle_diameter_px,
+            "left_center_px": [left_c[0], left_c[1]],
+            "right_center_px": [right_c[0], right_c[1]],
+        }
+
+
+def _which_display():
+    """Which screen the sketch actually opened on, for the run record."""
+    displays = screen_displays()
+    if not displays:
+        return None
+    if not _cfg["fullscreen"]:
+        return {"windowed": True, "attached_displays": len(displays)}
+    mode, index = _resolve_monitor()
+    if mode == "index":
+        return displays[index - 1]
+    if mode == "span":
+        return {"spanning": True, "attached_displays": len(displays)}
+    # fullscreen on the default display: identify it by the surface size
+    for display in displays:
+        if (display["width"], display["height"]) == (py5.width, py5.height):
+            return display
+    return displays[0]
 
 
 def setup():
     py5.frame_rate(60)
     py5.text_align(py5.CENTER)
+
+    display = _which_display()
+    with _lock:
+        _rt["display"] = display
+    if display and "index" in display:
+        print(f"[assay] display {display['index']}: {display['width']}x"
+              f"{display['height']} at +{display['x']}+{display['y']} ({display['id']})")
 
     if not _cfg["fullscreen"] and _cfg["window_pos"]:
         x, y = _cfg["window_pos"]
@@ -191,6 +304,10 @@ def setup():
     print(f"[assay] experiment {experiment.name!r} ({desc}, sha1 {experiment.sha1})")
     print(f"[assay] master_seed={seed}  "
           f"(reproduce this run with configure(master_seed={seed}))")
+
+    # before any message goes out, so even the ARMED state and trial_start
+    # carry where on screen the trial will be drawn
+    _update_geometry(experiment)
 
     if triggered:
         print("[assay] ARMED -- waiting for start_run() trigger")
@@ -243,16 +360,7 @@ def draw():
     left_c = _resolve_center("left", experiment, w, h)
     right_c = _resolve_center("right", experiment, w, h)
 
-    with _lock:
-        _rt["geometry"] = {
-            "window_w": w,
-            "window_h": h,
-            "fullscreen": bool(_cfg["fullscreen"]),
-            "monitor": _cfg["monitor"],
-            "circle_diameter_px": experiment.circle_diameter_px,
-            "left_center_px": [left_c[0], left_c[1]],
-            "right_center_px": [right_c[0], right_c[1]],
-        }
+    _update_geometry(experiment, w, h, left_c, right_c)
 
     left.display(left_c[0], left_c[1], t)
     right.display(right_c[0], right_c[1], t)
@@ -334,15 +442,28 @@ def request_stop():
 def start_run():
     """Trigger: leave ARMED and run the (one) trial. No-op if not ARMED.
     Thread-safe -- the trial is built on the sketch thread next frame (py5
-    objects must not be created off it)."""
+    objects must not be created off it).
+
+    Returns True if the trigger was accepted.
+
+    A trigger that lands before setup() has run is REFUSED rather than
+    half-applied: _rt["phase"] reads "armed" from initialisation, so without
+    this guard an early trigger would set start_pending, setup() would then
+    reset the phase to armed, and draw()'s armed branch returns before
+    consuming start_pending -- stranding the flag, so that animal's trial
+    never runs and nothing says why. Callers see False and can warn."""
     with _lock:
+        if not _rt["started"]:
+            print("[assay] trigger ignored -- the sketch is still starting up")
+            return False
         if _rt["phase"] != "armed":
-            return
+            return False
         _rt["run_id"] += 1
         _rt["phase"] = "running"
         _rt["start_pending"] = True
         run_id = _rt["run_id"]
     print(f"[assay] trigger -> run {run_id}")
+    return True
 
 
 def abort_run():

@@ -241,7 +241,7 @@ class StimulusPublisher(Node):
         """std_msgs/Bool: true -> begin the run, false -> abort to ARMED."""
         if msg.data:
             self.get_logger().info("trigger received -> starting run")
-            assay.start_run()
+            self._warn_if_refused(assay.start_run())
         else:
             self.get_logger().info("trigger false -> aborting run")
             assay.abort_run()
@@ -257,7 +257,24 @@ class StimulusPublisher(Node):
         except (json.JSONDecodeError, TypeError):
             pass
         self.get_logger().info(f"trigger received ({summary}) -> starting run")
-        assay.start_run()
+        self._warn_if_refused(assay.start_run())
+
+    def _warn_if_refused(self, accepted):
+        """A refused trigger means an animal was detected and NOT shown a
+        trial. Say so loudly: the bag would otherwise hold a detection event
+        with no trial after it, and nothing explaining the gap."""
+        if accepted:
+            return
+        phase = assay.phase()
+        if phase == "running":
+            self.get_logger().warn(
+                "trigger ignored -- a trial is already running; this detection "
+                "did not start another one")
+        else:
+            self.get_logger().warn(
+                f"TRIGGER REFUSED (phase={phase}) -- this detection did NOT run a "
+                f"trial. The sketch was not armed yet; start the detector after "
+                f"the sketch is up (triggered_assay.launch.py does this)")
 
     def _check_sketch(self):
         """Flag the main loop to exit when the run is over -- experiment
