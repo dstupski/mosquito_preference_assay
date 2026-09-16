@@ -65,8 +65,8 @@ DEFAULT_ZONE = "490,481,690,681"
 # NOTE the camera sits at 90 degrees to the arena's left/right axis, so the two
 # stimulus sides are UP and DOWN in this image, not left and right, and the
 # display wall is toward the right-hand edge of the frame.
-DEFAULT_LEFT_ZONE = "1030,250,1230,450"
-DEFAULT_RIGHT_ZONE = "1030,650,1230,850"
+DEFAULT_LEFT_ZONE = "1030,320,1230,520"
+DEFAULT_RIGHT_ZONE = "1030,720,1230,920"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
