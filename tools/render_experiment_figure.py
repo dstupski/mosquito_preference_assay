@@ -58,7 +58,7 @@ from mosquito_preference_assay.detection import find_candidates, parse_roi  # no
 from mosquito_preference_assay.experiment import Experiment  # noqa: E402
 
 DEFAULT_ROI = "340,40,1260,1070"
-DEFAULT_ZONE = "600,350,1000,750"
+DEFAULT_ZONE = "550,400,750,600"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
@@ -212,7 +212,7 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
 
     fig = plt.figure(figsize=(16, 9), dpi=120)
     fig.patch.set_facecolor("white")
-    grid = fig.add_gridspec(3, 2, height_ratios=[1, 0.10, 0.26], width_ratios=[1, 1],
+    grid = fig.add_gridspec(3, 2, height_ratios=[1, 0.10, 0.17], width_ratios=[1, 1],
                             left=0.035, right=0.965, top=0.845, bottom=0.045,
                             wspace=0.09, hspace=0.05)
     ax_cam = fig.add_subplot(grid[0, 0])
@@ -315,32 +315,20 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
 
 
 def _design_panel(ax, experiment, left_name, right_name, args):
-    pool = list(experiment.stimuli)
-    how = "two at random" if experiment.mode == "sample" else "a defined pair"
-    lines = [
-        ("Design", [
-            f"pool of {len(pool)} stimuli; each trial draws {how}",
-            f"this trial: {left_name}  vs  {right_name}",
-            "sides randomised, so side bias can't look like preference",
-        ]),
-        ("Trigger", [
-            "a mosquito-sized blob inside the trigger zone,",
-            f"for {args.consecutive} consecutive frames",
-            "the detection message fires the trial and is recorded",
-        ]),
-        ("Trial", [
-            f"{args.trial_sec:.0f} s, then the run ends and the bag closes",
-            "one launch = one animal = one bag",
-            "every frame's stimulus state is recorded",
-        ]),
+    """Three plain steps across the bottom -- a slide is read in a couple of
+    seconds, so this says what happens, not how it is configured."""
+    steps = [
+        "mosquito triggers detection",
+        "two random stimuli, one left and one right",
+        f"{args.trial_sec:.0f} s trials",
     ]
-    for column, (heading, body) in enumerate(lines):
-        x = 0.006 + column * 0.336
-        ax.text(x, 1.02, heading, transform=ax.transAxes, fontsize=13.5,
-                weight="bold", color=INK, va="top")
-        for row, line in enumerate(body):
-            ax.text(x, 0.74 - row * 0.27, line, transform=ax.transAxes,
-                    fontsize=11.5, color=MUTED, va="top")
+    positions = (0.035, 0.40, 0.80)
+    for x, text in zip(positions, steps):
+        ax.text(x, 0.72, text, transform=ax.transAxes, fontsize=16,
+                color=INK, va="center")
+    for x in (0.355, 0.755):
+        ax.text(x, 0.72, "\u2192", transform=ax.transAxes, fontsize=19,
+                color=ACCENT, va="center", ha="center", weight="bold")
 
 
 def _timeline(ax, args, n_frames, trigger_index):
