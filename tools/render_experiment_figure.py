@@ -65,8 +65,8 @@ DEFAULT_ZONE = "490,481,690,681"
 # NOTE the camera sits at 90 degrees to the arena's left/right axis, so the two
 # stimulus sides are UP and DOWN in this image, not left and right, and the
 # display wall is toward the right-hand edge of the frame.
-DEFAULT_LEFT_ZONE = "950,250,1150,450"
-DEFAULT_RIGHT_ZONE = "950,650,1150,850"
+DEFAULT_LEFT_ZONE = "1030,250,1230,450"
+DEFAULT_RIGHT_ZONE = "1030,650,1230,850"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
@@ -250,9 +250,8 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                                fill=False, ec=ACCENT, lw=2.0, ls="--"))
     ax_cam.text((zone[0] - x0) / step + 6, (zone[1] - y0) / step - 10,
                 "trigger zone", color=ACCENT, fontsize=11, weight="bold")
-    score_zones = [(parse_roi(args.left_zone), LEFT, "in front of\nleft stimulus"),
-                   (parse_roi(args.right_zone), RIGHT, "in front of\nright stimulus")]
-    # labels sit beside the boxes, since stacked boxes have no room beneath
+    score_zones = [(parse_roi(args.left_zone), LEFT, "left"),
+                   (parse_roi(args.right_zone), RIGHT, "right")]
     zone_patches = []
     for (zx0, zy0, zx1, zy1), colour, label in score_zones:
         patch = Rectangle(((zx0 - x0) / step, (zy0 - y0) / step),
@@ -260,9 +259,6 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                           fill=True, fc=colour, ec=colour, lw=2.0, alpha=0.10)
         ax_cam.add_patch(patch)
         zone_patches.append(patch)
-        ax_cam.text((zx0 - x0) / step - 14, ((zy0 + zy1) / 2 - y0) / step,
-                    label, color=colour, fontsize=10.5, ha="right", va="center",
-                    weight="bold", linespacing=1.25)
 
     marker, = ax_cam.plot([], [], "o", mfc="none", mec="#ffd400", mew=2.5, ms=20)
     badge = ax_cam.text(0.02, 0.975, "", transform=ax_cam.transAxes, va="top",
@@ -309,12 +305,25 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                 totals[side] += 1
         dwell.append((totals[0] / args.fps, totals[1] / args.fps))
 
-    # inside the image, over the empty floor of the arena, so it cannot
-    # collide with the timeline underneath the panel
-    tally = ax_cam.text(0.5, 0.045, "", transform=ax_cam.transAxes, ha="center",
-                        va="bottom", fontsize=12.5, color=INK,
-                        bbox=dict(boxstyle="round,pad=0.35", fc="white",
-                                  ec="#d3d8de", alpha=0.92))
+    # a running bar per side, ticking up for every frame the animal spends in
+    # that zone -- inside the panel, over the empty arena floor
+    bars_ax = ax_cam.inset_axes([0.10, 0.035, 0.84, 0.125])
+    bars_ax.set_facecolor("white")
+    bars_ax.patch.set_alpha(0.86)
+    bars = bars_ax.barh([1, 0], [0, 0], height=0.62, color=[LEFT, RIGHT])
+    bars_ax.set_xlim(0, args.trial_sec)
+    bars_ax.set_ylim(-0.55, 1.55)
+    bars_ax.set_yticks([1, 0])
+    bars_ax.set_yticklabels(["left", "right"], fontsize=10.5, weight="bold")
+    bars_ax.tick_params(axis="y", length=0, pad=2)
+    bars_ax.set_xticks([])
+    for side in ("top", "right", "bottom", "left"):
+        bars_ax.spines[side].set_visible(False)
+    for tick, colour in zip(bars_ax.get_yticklabels(), (LEFT, RIGHT)):
+        tick.set_color(colour)
+    bar_values = [bars_ax.text(0, y, "", va="center", ha="left", fontsize=10.5,
+                               color=INK, clip_on=False) for y in (1, 0)]
+    bars_ax.set_title("time in front", fontsize=10.5, color=MUTED, pad=2)
 
     def update(i):
         record = records[i]
@@ -331,12 +340,11 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
             patch.set_alpha(0.28 if side == index else
                             (0.10 if i >= trigger_index else 0.05))
 
-        left_s, right_s = dwell[i]
-        if i >= trigger_index:
-            tally.set_text(f"time in front:   left {left_s:4.1f} s      "
-                           f"right {right_s:4.1f} s")
-        else:
-            tally.set_text("time in front:   scoring starts at the trigger")
+        seconds = dwell[i]
+        for bar, value, label_text in zip(bars, seconds, bar_values):
+            bar.set_width(value)
+            label_text.set_x(value + args.trial_sec * 0.015)
+            label_text.set_text(f"{value:.1f} s" if i >= trigger_index else "")
 
         if i < trigger_index:
             phase, colour, label = ARMED, MUTED, "ARMED — waiting for a mosquito"
