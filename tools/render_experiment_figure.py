@@ -59,12 +59,18 @@ from mosquito_preference_assay.experiment import Experiment  # noqa: E402
 
 DEFAULT_ROI = "340,40,1260,1070"
 DEFAULT_ZONE = "550,481,750,681"
+# the scoring zones: the volume in front of each stimulus. Which side the
+# animal spends more time in is what eventually decides the trial.
+DEFAULT_LEFT_ZONE = "380,300,680,750"
+DEFAULT_RIGHT_ZONE = "920,300,1220,750"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
 MUTED = "#7b8794"
 ACCENT = "#d95f02"
 GOOD = "#22a06b"
+LEFT = "#2563eb"
+RIGHT = "#7c3aed"
 
 
 def parse_args():
@@ -77,6 +83,8 @@ def parse_args():
     parser.add_argument("--right", default="")
     parser.add_argument("--out", default="experiment.mp4")
     parser.add_argument("--trigger-zone", default=DEFAULT_ZONE)
+    parser.add_argument("--left-zone", default=DEFAULT_LEFT_ZONE)
+    parser.add_argument("--right-zone", default=DEFAULT_RIGHT_ZONE)
     parser.add_argument("--consecutive", type=int, default=3)
     parser.add_argument("--trial-sec", type=float, default=15.0)
     parser.add_argument("--pre-sec", type=float, default=2.0)
@@ -238,6 +246,19 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                                fill=False, ec=ACCENT, lw=2.0, ls="--"))
     ax_cam.text((zone[0] - x0) / step + 6, (zone[1] - y0) / step - 10,
                 "trigger zone", color=ACCENT, fontsize=11, weight="bold")
+    score_zones = [(parse_roi(args.left_zone), LEFT, "in front of\nleft stimulus"),
+                   (parse_roi(args.right_zone), RIGHT, "in front of\nright stimulus")]
+    zone_patches = []
+    for (zx0, zy0, zx1, zy1), colour, label in score_zones:
+        patch = Rectangle(((zx0 - x0) / step, (zy0 - y0) / step),
+                          (zx1 - zx0) / step, (zy1 - zy0) / step,
+                          fill=True, fc=colour, ec=colour, lw=2.0, alpha=0.10)
+        ax_cam.add_patch(patch)
+        zone_patches.append(patch)
+        ax_cam.text(((zx0 + zx1) / 2 - x0) / step, (zy1 - y0) / step + 12,
+                    label, color=colour, fontsize=10.5, ha="center", va="top",
+                    weight="bold", linespacing=1.25)
+
     marker, = ax_cam.plot([], [], "o", mfc="none", mec="#ffd400", mew=2.5, ms=20)
     badge = ax_cam.text(0.02, 0.975, "", transform=ax_cam.transAxes, va="top",
                         fontsize=13, weight="bold", color="white",
@@ -264,14 +285,53 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
     _design_panel(ax_text, experiment, left_name, right_name, args)
     timeline = _timeline(ax_time, args, len(records), trigger_index)
 
+    def side_of(xy):
+        """Which scoring zone the animal is in, if any."""
+        if xy is None:
+            return None
+        for index, ((zx0, zy0, zx1, zy1), _colour, _label) in enumerate(score_zones):
+            if zx0 <= xy[0] <= zx1 and zy0 <= xy[1] <= zy1:
+                return index
+        return None
+
+    # precomputed, so a single-frame still reports the same numbers a video does
+    dwell = []
+    totals = [0, 0]
+    for index, record in enumerate(records):
+        if index >= trigger_index:
+            side = side_of(record["xy"])
+            if side is not None:
+                totals[side] += 1
+        dwell.append((totals[0] / args.fps, totals[1] / args.fps))
+
+    # inside the image, over the empty floor of the arena, so it cannot
+    # collide with the timeline underneath the panel
+    tally = ax_cam.text(0.5, 0.045, "", transform=ax_cam.transAxes, ha="center",
+                        va="bottom", fontsize=12.5, color=INK,
+                        bbox=dict(boxstyle="round,pad=0.35", fc="white",
+                                  ec="#d3d8de", alpha=0.92))
+
     def update(i):
         record = records[i]
         im_cam.set_data(record["gray"][y0:y1:step, x0:x1:step])
+        side = side_of(record["xy"])
         if record["xy"]:
             marker.set_data([(record["xy"][0] - x0) / step],
                             [(record["xy"][1] - y0) / step])
+            marker.set_mec(score_zones[side][1] if side is not None else "#ffd400")
+            marker.set_mew(3.5 if side is not None else 2.5)
         else:
             marker.set_data([], [])
+        for index, patch in enumerate(zone_patches):
+            patch.set_alpha(0.28 if side == index else
+                            (0.10 if i >= trigger_index else 0.05))
+
+        left_s, right_s = dwell[i]
+        if i >= trigger_index:
+            tally.set_text(f"time in front:   left {left_s:4.1f} s      "
+                           f"right {right_s:4.1f} s")
+        else:
+            tally.set_text("time in front:   scoring starts at the trigger")
 
         if i < trigger_index:
             phase, colour, label = ARMED, MUTED, "ARMED — waiting for a mosquito"
