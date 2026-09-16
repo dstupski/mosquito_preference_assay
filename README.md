@@ -109,6 +109,8 @@ tools/
                                  experiment file (for talks / checking a stimulus)
   render_tracking_video.py      render a presentation video: both camera feeds with
                                  detections + the 3D flight path building up
+  render_experiment_figure.py   slide graphic explaining the assay: the camera view
+                                 with the detection, what the mosquito is shown, design
   list_displays.py              which display is which, for picking `monitor`
 media/stimulus_gifs/           the rendered GIFs, committed so they are usable
                                  without a py5/Java/display setup
@@ -991,6 +993,33 @@ attached. `session` must contain `cam_a/` and `cam_b/`. Omit the calibration
 arguments to benchmark tracking only. Useful arguments: `rate_hz`, `loop`,
 `roi_a`/`roi_b`, `image_qos`, `max_reprojection_error_px`, `plot:=true` for
 the live 3D view, `watch_images:=true` for input-rate accounting.
+
+### A slide graphic explaining the assay
+
+```bash
+python3 tools/render_experiment_figure.py \
+    --session /path/to/session --out experiment.mp4    # or .png for a still
+```
+
+For talks: the arena camera with the detection that fires the trial, beside
+what the mosquito is actually shown, with the design written out underneath and
+a timeline running armed → detection → trial.
+
+Both halves are real. The camera side is footage through the real
+`detection.py`; the display side is the real stimulus classes drawing the pair
+named in the experiment file. The narrative comes out of the data rather than
+being staged — the animal is tracked from the first frame and the trial fires
+when it has been inside the trigger zone for `--consecutive` frames, which in
+the bundled footage takes about two seconds, so the "armed, waiting" phase is
+genuinely waiting.
+
+`--out x.png` gives a single still at the moment of detection, for a static
+slide; `--out x.mp4` plays the phases out in time.
+
+Options: `--left` / `--right` to choose the pair (default contrasts the static
+control against a moving stimulus), `--experiment` for a different pool,
+`--trigger-zone "x0,y0,x1,y1"`, `--consecutive` (3), `--trial-sec` (15),
+`--pre-sec` (2, how much armed to show first), `--camera`, `--title`.
 
 ### A presentation video of a tracked flight
 
