@@ -45,7 +45,7 @@ import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.patches import FancyArrowPatch, Rectangle  # noqa: E402
+from matplotlib.patches import Rectangle  # noqa: E402
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
@@ -224,11 +224,13 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
 
     fig = plt.figure(figsize=(16, 9), dpi=120)
     fig.patch.set_facecolor("white")
-    grid = fig.add_gridspec(3, 2, height_ratios=[1, 0.10, 0.17], width_ratios=[1, 1],
+    grid = fig.add_gridspec(3, 3, height_ratios=[1, 0.10, 0.17],
+                            width_ratios=[1, 0.16, 1],
                             left=0.035, right=0.965, top=0.845, bottom=0.045,
-                            wspace=0.09, hspace=0.05)
+                            wspace=0.07, hspace=0.05)
     ax_cam = fig.add_subplot(grid[0, 0])
-    ax_disp = fig.add_subplot(grid[0, 1])
+    bars_ax = fig.add_subplot(grid[0, 1])
+    ax_disp = fig.add_subplot(grid[0, 2])
     ax_time = fig.add_subplot(grid[1, :])
     ax_text = fig.add_subplot(grid[2, :])
     for ax in (ax_time, ax_text):
@@ -278,11 +280,6 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
     disp_note = ax_disp.text(0.5, 0.5, "", transform=ax_disp.transAxes, ha="center",
                              va="center", fontsize=15, color=MUTED, style="italic")
 
-    arrow = FancyArrowPatch((0.487, 0.60), (0.513, 0.60), transform=fig.transFigure,
-                            arrowstyle="-|>", mutation_scale=26, lw=2.5,
-                            color=ACCENT, alpha=0.0)
-    fig.patches.append(arrow)
-
     _design_panel(ax_text, experiment, left_name, right_name, args)
     timeline = _timeline(ax_time, args, len(records), trigger_index)
 
@@ -306,24 +303,31 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
         dwell.append((totals[0] / args.fps, totals[1] / args.fps))
 
     # a running bar per side, ticking up for every frame the animal spends in
-    # that zone -- inside the panel, over the empty arena floor
-    bars_ax = ax_cam.inset_axes([0.10, 0.035, 0.84, 0.125])
-    bars_ax.set_facecolor("white")
-    bars_ax.patch.set_alpha(0.86)
-    bars = bars_ax.barh([1, 0], [0, 0], height=0.62, color=[LEFT, RIGHT])
-    bars_ax.set_xlim(0, args.trial_sec)
-    bars_ax.set_ylim(-0.55, 1.55)
-    bars_ax.set_yticks([1, 0])
-    bars_ax.set_yticklabels(["left", "right"], fontsize=10.5, weight="bold")
+    # that zone, wedged between the arena view and the display
+    bars = bars_ax.bar([0, 1], [0, 0], width=0.62, color=[LEFT, RIGHT])
+    bars_ax.set_ylim(0, args.trial_sec)
+    bars_ax.set_xlim(-0.62, 1.62)
+    bars_ax.set_xticks([0, 1])
+    bars_ax.set_xticklabels(["left", "right"], fontsize=11.5, weight="bold")
+    bars_ax.tick_params(axis="x", length=0, pad=6)
+    bars_ax.set_yticks([0, args.trial_sec])
+    bars_ax.set_yticklabels(["0", f"{args.trial_sec:.0f} s"], fontsize=10, color=MUTED)
     bars_ax.tick_params(axis="y", length=0, pad=2)
-    bars_ax.set_xticks([])
-    for side in ("top", "right", "bottom", "left"):
+    for side in ("top", "right", "bottom"):
         bars_ax.spines[side].set_visible(False)
-    for tick, colour in zip(bars_ax.get_yticklabels(), (LEFT, RIGHT)):
+    bars_ax.spines["left"].set_color("#d3d8de")
+    for tick, colour in zip(bars_ax.get_xticklabels(), (LEFT, RIGHT)):
         tick.set_color(colour)
-    bar_values = [bars_ax.text(0, y, "", va="center", ha="left", fontsize=10.5,
-                               color=INK, clip_on=False) for y in (1, 0)]
-    bars_ax.set_title("time in front", fontsize=10.5, color=MUTED, pad=2)
+    bar_values = [bars_ax.text(x, 0, "", va="bottom", ha="center", fontsize=11,
+                               color=INK, weight="bold") for x in (0, 1)]
+    bars_ax.set_title("time in front", fontsize=11.5, color=INK, pad=8)
+    # shrink to the middle of the column: full panel height makes a 15 s scale
+    # so tall that a few seconds barely registers
+    cam_box, bars_box = ax_cam.get_position(), bars_ax.get_position()
+    bar_height = cam_box.height * 0.52
+    bars_ax.set_position([bars_box.x0,
+                          cam_box.y0 + (cam_box.height - bar_height) * 0.42,
+                          bars_box.width, bar_height])
 
     def update(i):
         record = records[i]
@@ -342,15 +346,15 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
 
         seconds = dwell[i]
         for bar, value, label_text in zip(bars, seconds, bar_values):
-            bar.set_width(value)
-            label_text.set_x(value + args.trial_sec * 0.015)
-            label_text.set_text(f"{value:.1f} s" if i >= trigger_index else "")
+            bar.set_height(value)
+            label_text.set_y(value + args.trial_sec * 0.02)
+            label_text.set_text(f"{value:.1f}" if i >= trigger_index else "")
 
         if i < trigger_index:
             phase, colour, label = ARMED, MUTED, "ARMED — waiting for a mosquito"
             im_disp.set_data(blank)
             disp_note.set_text("background only\n(no stimuli yet)")
-            arrow.set_alpha(0.0)
+
         else:
             j = i - trigger_index
             phase = DETECTED if j < int(0.7 * args.fps) else RUNNING
@@ -360,7 +364,7 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                      f"TRIAL RUNNING — {j / args.fps:4.1f} / {args.trial_sec:.0f} s")
             im_disp.set_data(plt.imread(str(display_paths[min(j, len(display_paths) - 1)])))
             disp_note.set_text("")
-            arrow.set_alpha(1.0 if phase is DETECTED else 0.35)
+
         badge.set_text(label)
         badge.get_bbox_patch().set_facecolor(colour)
         timeline(i)
