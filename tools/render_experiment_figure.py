@@ -250,9 +250,9 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
     ax_disp.set_xticks([])
     ax_disp.set_yticks([])
     ax_disp.set_title("what the mosquito is shown", fontsize=13, color=INK, pad=8)
-    for frac, name in ((0.27, left_name), (0.73, right_name)):
-        ax_disp.text(frac, -0.045, name, transform=ax_disp.transAxes, ha="center",
-                     va="top", fontsize=12, color=INK, weight="bold")
+    for frac, label in ((0.27, "left stimulus"), (0.73, "right stimulus")):
+        ax_disp.text(frac, -0.045, label, transform=ax_disp.transAxes, ha="center",
+                     va="top", fontsize=13, color=INK, weight="bold")
     disp_note = ax_disp.text(0.5, 0.5, "", transform=ax_disp.transAxes, ha="center",
                              va="center", fontsize=15, color=MUTED, style="italic")
 
@@ -315,20 +315,38 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
 
 
 def _design_panel(ax, experiment, left_name, right_name, args):
-    """Three plain steps across the bottom -- a slide is read in a couple of
-    seconds, so this says what happens, not how it is configured."""
+    """The four steps, as one centred row. Positions come from measuring the
+    rendered text rather than being guessed, so the row stays centred whatever
+    the wording and font size are."""
     steps = [
         "mosquito triggers detection",
         "two random stimuli, one left and one right",
         f"{args.trial_sec:.0f} s trials",
+        "winner stimulus determined",
     ]
-    positions = (0.035, 0.40, 0.80)
-    for x, text in zip(positions, steps):
-        ax.text(x, 0.72, text, transform=ax.transAxes, fontsize=16,
-                color=INK, va="center")
-    for x in (0.355, 0.755):
-        ax.text(x, 0.72, "\u2192", transform=ax.transAxes, fontsize=19,
-                color=ACCENT, va="center", ha="center", weight="bold")
+    size, arrow, gap = 15, "\u2192", 0.012
+    figure = ax.figure
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+
+    def width_in_axes(text_object):
+        box = text_object.get_window_extent(renderer=renderer)
+        inverse = ax.transAxes.inverted()
+        return (inverse.transform((box.width, 0)) - inverse.transform((0, 0)))[0]
+
+    pieces = []
+    for index, step in enumerate(steps):
+        if index:
+            pieces.append(ax.text(0, 0.62, arrow, transform=ax.transAxes, fontsize=18,
+                                  color=ACCENT, va="center", weight="bold"))
+        pieces.append(ax.text(0, 0.62, step, transform=ax.transAxes, fontsize=size,
+                              color=INK, va="center"))
+
+    widths = [width_in_axes(piece) for piece in pieces]
+    x = (1.0 - (sum(widths) + gap * 2 * (len(steps) - 1))) / 2.0
+    for piece, width in zip(pieces, widths):
+        piece.set_x(x)
+        x += width + (gap if piece.get_text() == arrow else gap)
 
 
 def _timeline(ax, args, n_frames, trigger_index):
