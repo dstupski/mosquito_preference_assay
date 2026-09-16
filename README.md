@@ -231,6 +231,7 @@ xset s off; xset s noblank; xset -dpms
 | **message_filters** | any | apt `ros-<distro>-message-filters` (in `-desktop`) | `stereo_sync` only |
 | **geometry_msgs** | any | apt (in `-desktop`) | `tracker` / `stereo_sync` only |
 | **matplotlib** | any | apt `python3-matplotlib` (often already present — see the numpy note above) | `trajectory_plotter` only |
+| **rosbag2_interfaces** | any | apt (with `rosbag2`, in `-desktop`) | `snapshot_supervisor` only — the `/rosbag2_recorder/snapshot` service |
 | a display | — | — | windowed / fullscreen sketch; also `trajectory_plotter`'s GUI |
 
 **`JAVA_HOME`** — on import, `assay.py` sets it (if unset) to the first of:
@@ -428,6 +429,15 @@ topic for either:
 **Which topic / type:** the experiment file's `trigger.topic` / `trigger.msg_type`
 (or `trigger.node` → `/<node>/trigger`); the `trigger_topic` / `trigger_msg_type`
 ROS params override them. Both are recorded in `~/experiment_info`.
+
+**When a trigger is refused.** Two cases, both logged as warnings rather than
+passing silently, since each means a detected animal did *not* get a trial:
+
+- **while a trial is already running** — the trial in progress is left alone.
+- **before the sketch has finished starting up.** Opening the JVM and the
+  window takes seconds, and a trigger landing in that window cannot run a
+  trial. Start whatever produces triggers *after* the sketch is up —
+  `triggered_assay.launch.py` does this with `detector_delay`.
 
 ### `test_trigger` — fire the trigger on command
 
@@ -1060,7 +1070,7 @@ or a `params_file`.
 | `trigger_msg_type` | `""` | `""` use the experiment's `trigger.msg_type`, else `bool`. `bool` = `std_msgs/Bool` (true start, false abort); `string` = `std_msgs/String` (any message starts) |
 | `master_seed` | `-1` | `-1` → random (logged + in `experiment_info`); `≥0` → reproducible |
 | `fullscreen` | `false` | `true` for the mosquito-facing display |
-| `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. |
+| `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. An index that doesn't exist fails at startup listing the ones that do — see [Choosing the display](#choosing-the-display) for finding the projector's number |
 | `window_pos` | `""` | windowed only — place the sketch at `"x,y"` px |
 | `window_w` / `window_h` | `1200` / `800` | ignored when `fullscreen` |
 | `left_center_px` / `right_center_px` | `""` | `"x,y"` px override of the experiment's `display.*_center_px` |
@@ -1137,9 +1147,11 @@ so recordings are distinguishable.
   "trial_start_wall": 1788459000.95,
   "trial_duration_sec": 3.0,             // resolved value
   "elapsed_sec": 1.95,                   // since trial_start_wall
-  "geometry": {"window_w":1200,"window_h":800,"fullscreen":false,"monitor":null,
+  "geometry": {"window_w":2560,"window_h":1440,"fullscreen":true,"monitor":"2",
+               "display":{"index":2,"id":":0.1","width":2560,"height":1440,
+                          "x":1920,"y":0},
                "circle_diameter_px":160,
-               "left_center_px":[300.0,400.0],"right_center_px":[900.0,400.0]},
+               "left_center_px":[640.0,720.0],"right_center_px":[1920.0,720.0]},
   "left":  {"name":"jitter","type":"jitter",
             "params":{"fill_gray":20,"amplitude_px":20,"noise_speed":1.2,
                       "seed_x":490.67,"seed_y":154.37}},
@@ -1152,6 +1164,12 @@ so recordings are distinguishable.
 - **`left` / `right`** are the authoritative placement — `name` is the pool
   entry, `type` is the marker behavior (they differ when the YAML gives a
   custom name). `params` are all resolved concrete values.
+- **`geometry.display`** is the screen the sketch *actually* opened on
+  (`index` is the value `monitor` takes), as opposed to `monitor`, which is
+  only what was asked for — so a bag records which physical display the animal
+  was shown. It reads `{"windowed": true, …}` in windowed mode and
+  `{"spanning": true, …}` for `monitor: span`. Present from the very first
+  message, including `trial_start`.
 - **`condition.name`** is a grouping key, *not* placement — `ordered: false` →
   `"a|b"` sorted, side-independent (the sides this trial are in `left`/`right`);
   `ordered: true` → `"a->b"`, sides fixed by the pairing.
