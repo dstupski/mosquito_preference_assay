@@ -58,11 +58,15 @@ from mosquito_preference_assay.detection import find_candidates, parse_roi  # no
 from mosquito_preference_assay.experiment import Experiment  # noqa: E402
 
 DEFAULT_ROI = "340,40,1260,1070"
-DEFAULT_ZONE = "550,481,750,681"
-# the scoring zones: the volume in front of each stimulus. Which side the
+DEFAULT_ZONE = "490,481,690,681"
+# The scoring zones: the volume in front of each stimulus. Which side the
 # animal spends more time in is what eventually decides the trial.
-DEFAULT_LEFT_ZONE = "380,300,680,750"
-DEFAULT_RIGHT_ZONE = "920,300,1220,750"
+#
+# NOTE the camera sits at 90 degrees to the arena's left/right axis, so the two
+# stimulus sides are UP and DOWN in this image, not left and right, and the
+# display wall is toward the right-hand edge of the frame.
+DEFAULT_LEFT_ZONE = "950,250,1150,450"
+DEFAULT_RIGHT_ZONE = "950,650,1150,850"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
@@ -248,6 +252,7 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                 "trigger zone", color=ACCENT, fontsize=11, weight="bold")
     score_zones = [(parse_roi(args.left_zone), LEFT, "in front of\nleft stimulus"),
                    (parse_roi(args.right_zone), RIGHT, "in front of\nright stimulus")]
+    # labels sit beside the boxes, since stacked boxes have no room beneath
     zone_patches = []
     for (zx0, zy0, zx1, zy1), colour, label in score_zones:
         patch = Rectangle(((zx0 - x0) / step, (zy0 - y0) / step),
@@ -255,8 +260,8 @@ def compose(records, trigger_index, frames_dir, roi, zone, experiment,
                           fill=True, fc=colour, ec=colour, lw=2.0, alpha=0.10)
         ax_cam.add_patch(patch)
         zone_patches.append(patch)
-        ax_cam.text(((zx0 + zx1) / 2 - x0) / step, (zy1 - y0) / step + 12,
-                    label, color=colour, fontsize=10.5, ha="center", va="top",
+        ax_cam.text((zx0 - x0) / step - 14, ((zy0 + zy1) / 2 - y0) / step,
+                    label, color=colour, fontsize=10.5, ha="right", va="center",
                     weight="bold", linespacing=1.25)
 
     marker, = ax_cam.plot([], [], "o", mfc="none", mec="#ffd400", mew=2.5, ms=20)
