@@ -58,7 +58,7 @@ from mosquito_preference_assay.detection import find_candidates, parse_roi  # no
 from mosquito_preference_assay.experiment import Experiment  # noqa: E402
 
 DEFAULT_ROI = "340,40,1260,1070"
-DEFAULT_ZONE = "550,400,750,600"
+DEFAULT_ZONE = "550,481,750,681"
 ARMED, DETECTED, RUNNING = "armed", "detected", "running"
 
 INK = "#1f2933"
