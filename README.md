@@ -85,6 +85,7 @@ mosquito_preference_assay/
   stimulus_publisher_node.py   the ROS 2 node
   test_trigger_node.py         bench helper: publish the Bool trigger on command
   snapshot_supervisor_node.py  flushes a --snapshot-mode bag at trial start / end
+  display_check_node.py        test pattern on the configured display + drag-to-align
   detection.py                 background-subtraction blob detection (ported
                                 from test_videos_particle_tracking)
   mosquito_detector_node.py    watches a camera feed, publishes detection events
@@ -120,6 +121,7 @@ config/
 launch/
   assay.launch.py               stimulus_publisher + its params file
   detector.launch.py            mosquito_detector + its params file
+  display_check.launch.py       display_check with the assay's own params file
   triggered_capture.launch.py   stimulus_publisher (triggered) + ros2 bag record + auto-shutdown
   triggered_assay.launch.py     the rig workflow: display ARMED on the projector +
                                  detector + recorder, stimuli appear on detection
@@ -211,6 +213,40 @@ screen the animal was actually shown:
 
 ```json
 "display": {"index": 2, "id": ":0.1", "width": 2560, "height": 1440, "x": 1920, "y": 0}
+```
+
+**Check it, and align it to the arena.** `display_check` puts a test pattern
+on whichever display the config selects, so you can confirm the projector is
+the one that lights up before running an animal:
+
+```bash
+ros2 launch mosquito_preference_assay display_check.launch.py
+ros2 launch mosquito_preference_assay display_check.launch.py fullscreen:=true monitor:=2
+```
+
+It loads the same `config/assay_params.yaml` the assay loads and hands the
+settings to `assay.settings()` — the very function the real sketch uses to
+pick a screen — so it is not a parallel implementation that might agree by
+luck. The pattern shows:
+
+| On screen | What it tells you |
+|---|---|
+| corner brackets | a clipped or missing one means the projector is overscanning, or the resolution is wrong |
+| the two stimulus circles | exactly where the experiment's geometry will put them, at the configured diameter |
+| live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
+| display index, resolution, position | which screen it *actually* opened on, beside the one requested |
+
+**Aligning:** drag either circle to line it up with the arena, `[` / `]` to
+resize, then `s` writes the positions to `out_file` (default
+`display_alignment.yaml`) as a params snippet you can paste into
+`assay_params.yaml` or pass straight back with `--params-file`. `r` resets to
+the config, `q` or ESC closes.
+
+```yaml
+/**:
+  ros__parameters:
+    left_center_px: "500,600"
+    right_center_px: "1920,720"
 ```
 
 **Stop the projector blanking.** An idle X session will blank the screen and
