@@ -24,11 +24,16 @@ What the pattern shows, and what each part is for:
     actually rendering on that screen rather than showing a frozen window;
   * which display it actually opened on, next to which one was requested.
 
-ALIGNMENT. The two circles can be dragged to line them up with the arena, and
-the positions saved -- so the rig is aligned by eye against the real thing
+ALIGNMENT. A dashed rectangle marks the PROJECTION SURFACE -- the part of the
+projector's output that actually falls on the surface you care about, which is
+usually not the whole frame. Drag it over the real illuminated area, then place
+the circles inside it. The two circles can be dragged to line them up with the
+arena, and the positions saved -- so the rig is aligned by eye against the real thing
 rather than by guessing pixel coordinates:
 
     drag either circle   move it
+    drag inside the rect move the projection surface
+    drag a rect corner   resize it
     [ and ]              shrink / grow both circles
     s                    save the current geometry to `out_file` and print it
     r                    reset to what the config says
@@ -47,6 +52,8 @@ params file drives both):
     window_w/h         int     1200/800
     left_center_px / right_center_px  string  ""  override the experiment's centres
     duration_sec      double  0.0      0 = stay up until closed
+    surface_px        string  ""       "x0,y0,x1,y1" starting rectangle;
+                                       "" = a centred box inset from the screen
     out_file          string  display_alignment.yaml   where `s` saves to
 """
 
@@ -61,6 +68,17 @@ from .stimulus_publisher_node import _resolve_experiment_file
 
 INK = 20
 ACCENT = "#d95f02"
+
+
+def _rect_param(node, name):
+    raw = str(node.declare_parameter(name, "").value).strip()
+    if not raw:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(v) for v in raw.split(","))
+    except ValueError:
+        raise ValueError(f"{name} must be 'x0,y0,x1,y1' pixels, got {raw!r}") from None
+    return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
 
 
 def _center_param(node, name):
@@ -87,6 +105,7 @@ class DisplayCheck(Node):
         self.duration_sec = float(self.declare_parameter("duration_sec", 0.0).value)
         self.out_file = str(self.declare_parameter(
             "out_file", "display_alignment.yaml").value)
+        self.surface_px = _rect_param(self, "surface_px")
         window_pos = _center_param(self, "window_pos")
         left_center = _center_param(self, "left_center_px")
         right_center = _center_param(self, "right_center_px")
@@ -117,6 +136,7 @@ def run_pattern(node):
 
     experiment = node.experiment
     state = {"start": None, "display": None, "left": None, "right": None,
+             "surface": None, "grab": None,
              "diameter": float(experiment.circle_diameter_px), "dragging": None,
              "saved": ""}
 
@@ -126,6 +146,12 @@ def run_pattern(node):
         state["right"] = list(assay._resolve_center(
             "right", experiment, py5.width, py5.height))
         state["diameter"] = float(experiment.circle_diameter_px)
+        if node.surface_px:
+            state["surface"] = list(node.surface_px)
+        else:
+            inset_x, inset_y = py5.width * 0.12, py5.height * 0.12
+            state["surface"] = [inset_x, inset_y,
+                                py5.width - inset_x, py5.height - inset_y]
 
     def setup():
         py5.frame_rate(60)
@@ -149,6 +175,8 @@ def run_pattern(node):
         py5.background(experiment.background_gray)
 
         _corner_brackets(py5, width, height)
+        _surface_rect(py5, state["surface"],
+                      held=str(state["dragging"] or "").startswith("surface"))
         for slot, label in (("left", "LEFT"), ("right", "RIGHT")):
             _stimulus_outline(py5, state[slot], state["diameter"], label,
                               held=state["dragging"] == slot)
@@ -159,23 +187,58 @@ def run_pattern(node):
             py5.exit_sketch()
 
     def mouse_pressed():
+        mx, my = py5.mouse_x, py5.mouse_y
+        x0, y0, x1, y1 = state["surface"]
+        # corners first: they are small targets sitting on the rectangle's
+        # edge, so anything else would shadow them
+        for index, (cx, cy) in enumerate(((x0, y0), (x1, y0), (x0, y1), (x1, y1))):
+            if py5.dist(mx, my, cx, cy) <= 22:
+                state["dragging"] = f"surface-corner-{index}"
+                return
         radius = state["diameter"] / 2
         for slot in ("left", "right"):
             cx, cy = state[slot]
-            if py5.dist(py5.mouse_x, py5.mouse_y, cx, cy) <= radius:
+            if py5.dist(mx, my, cx, cy) <= radius:
                 state["dragging"] = slot
                 return
+        if x0 <= mx <= x1 and y0 <= my <= y1:
+            state["dragging"] = "surface-move"
+            state["grab"] = (mx - x0, my - y0, x1 - x0, y1 - y0)
+            return
         state["dragging"] = None
 
     def mouse_dragged():
-        if state["dragging"]:
-            state[state["dragging"]] = [float(py5.mouse_x), float(py5.mouse_y)]
+        holding = state["dragging"]
+        if not holding:
+            return
+        mx, my = float(py5.mouse_x), float(py5.mouse_y)
+        if holding in ("left", "right"):
+            state[holding] = [mx, my]
+        elif holding == "surface-move":
+            off_x, off_y, w, h = state["grab"]
+            state["surface"] = [mx - off_x, my - off_y, mx - off_x + w, my - off_y + h]
+        elif holding.startswith("surface-corner-"):
+            index = int(holding.rsplit("-", 1)[1])
+            x0, y0, x1, y1 = state["surface"]
+            if index in (0, 2):
+                x0 = mx
+            else:
+                x1 = mx
+            if index in (0, 1):
+                y0 = my
+            else:
+                y1 = my
+            state["surface"] = [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
 
     def mouse_released():
-        if state["dragging"]:
-            cx, cy = state[state["dragging"]]
+        holding = state["dragging"]
+        if holding in ("left", "right"):
+            cx, cy = state[holding]
+            node.get_logger().info(f"{holding}_center_px = {cx:.0f},{cy:.0f}")
+        elif holding:
+            x0, y0, x1, y1 = state["surface"]
             node.get_logger().info(
-                f"{state['dragging']}_center_px = {cx:.0f},{cy:.0f}")
+                f"surface_px = {x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f}")
         state["dragging"] = None
 
     def key_pressed():
@@ -204,6 +267,7 @@ def _save(node, state):
     """Write the dragged geometry as a params snippet that can be pasted into
     assay_params.yaml, or passed straight back as its own params file."""
     left, right = state["left"], state["right"]
+    x0, y0, x1, y1 = state["surface"]
     text = (
         "# Written by display_check after aligning against the arena by hand.\n"
         "# Paste into config/assay_params.yaml, or pass with --params-file.\n"
@@ -212,8 +276,15 @@ def _save(node, state):
         f"    left_center_px: \"{left[0]:.0f},{left[1]:.0f}\"\n"
         f"    right_center_px: \"{right[0]:.0f},{right[1]:.0f}\"\n"
         "\n"
-        f"# circle_diameter_px is experiment geometry, so it belongs in the\n"
-        f"# experiment file's display: block, not here:\n"
+        "    # The part of the projector's output that lands on the surface of\n"
+        "    # interest. display_check reads this back so the rectangle starts\n"
+        "    # where you left it. NOTE the assay does not consume it yet -- the\n"
+        "    # stimulus centres above are absolute screen pixels, and it is on\n"
+        "    # you to keep them inside this rectangle.\n"
+        f"    surface_px: \"{x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f}\"\n"
+        "\n"
+        "# circle_diameter_px is experiment geometry, so it belongs in the\n"
+        "# experiment file's display: block, not here:\n"
         f"#   display:\n"
         f"#     circle_diameter_px: {state['diameter']:.0f}\n"
     )
@@ -240,6 +311,46 @@ def _corner_brackets(py5, width, height):
     py5.stroke_weight(1)
     py5.line(width / 2, height / 2 - arm, width / 2, height / 2 + arm)
     py5.line(width / 2 - arm, height / 2, width / 2 + arm, height / 2)
+
+
+def _surface_rect(py5, rect, held=False):
+    """The part of the projector's output that lands on the surface of
+    interest -- usually not the whole frame, so the stimuli have to be placed
+    inside it rather than relative to the screen."""
+    x0, y0, x1, y1 = rect
+    py5.no_fill()
+    py5.stroke(INK)
+    py5.stroke_weight(3 if held else 2)
+    dash = 14
+    for x in _dashes(x0, x1, dash):
+        py5.line(x[0], y0, x[1], y0)
+        py5.line(x[0], y1, x[1], y1)
+    for y in _dashes(y0, y1, dash):
+        py5.line(x0, y[0], x0, y[1])
+        py5.line(x1, y[0], x1, y[1])
+
+    py5.no_stroke()
+    py5.fill(INK)
+    for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+        py5.ellipse(cx, cy, 13, 13)
+    # both labels ride the TOP edge: below the rectangle they collide with the
+    # key map whenever the surface is dragged near the bottom of the screen
+    py5.text_size(14)
+    py5.text("projection surface", (x0 + x1) / 2, y0 - 26)
+    py5.text_size(12)
+    py5.text(f"{x0:.0f},{y0:.0f}  to  {x1:.0f},{y1:.0f}"
+             f"   ({x1 - x0:.0f} x {y1 - y0:.0f} px)",
+             (x0 + x1) / 2, y0 - 9)
+
+
+def _dashes(start, end, dash):
+    """Dash spans across [start, end], so the rectangle reads as a guide
+    rather than as something being displayed to the animal."""
+    spans, position = [], start
+    while position < end:
+        spans.append((position, min(position + dash, end)))
+        position += dash * 2
+    return spans
 
 
 def _stimulus_outline(py5, centre, diameter, label, held=False):
@@ -280,7 +391,8 @@ def _readout(py5, node, state, width, height):
              width / 2, height * 0.165)
     py5.text(f"frame {py5.frame_count}   {py5.get_frame_rate():.0f} fps",
              width / 2, height * 0.86)
-    py5.text("drag a circle to align  ·  [ ] size  ·  s save  ·  r reset  ·  q quit",
+    py5.text("drag circles / the surface rect  ·  corners resize  ·  "
+             "[ ] size  ·  s save  ·  r reset  ·  q quit",
              width / 2, height * 0.91)
     if state.get("saved"):
         py5.text(state["saved"], width / 2, height * 0.955)

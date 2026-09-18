@@ -236,10 +236,13 @@ luck. The pattern shows:
 | live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
 | display index, resolution, position | which screen it *actually* opened on, beside the one requested |
 
-**Aligning:** drag either circle to line it up with the arena, `[` / `]` to
-resize, then `s` writes the positions to `out_file` (default
+**Aligning:** a dashed rectangle marks the **projection surface** — the part
+of the projector's output that actually falls on the surface you care about,
+which is usually not the whole frame. Drag it over the real illuminated area
+(corners resize it), then drag the circles into place inside it. `[` / `]`
+resize the circles, `s` writes everything to `out_file` (default
 `display_alignment.yaml`) as a params snippet you can paste into
-`assay_params.yaml` or pass straight back with `--params-file`. `r` resets to
+`assay_params.yaml` or pass straight back with `--params-file`, `r` resets to
 the config, `q` or ESC closes.
 
 ```yaml
@@ -247,7 +250,12 @@ the config, `q` or ESC closes.
   ros__parameters:
     left_center_px: "500,600"
     right_center_px: "1920,720"
+    surface_px: "510,390,2323,1317"
 ```
+
+`display_check` reads `surface_px` back, so the rectangle starts where you
+left it. **The assay does not consume it yet** — stimulus centres are absolute
+screen pixels, so keeping them inside the rectangle is currently down to you.
 
 **Stop the projector blanking.** An idle X session will blank the screen and
 DPMS will power it down mid-experiment. On the rig machine:
