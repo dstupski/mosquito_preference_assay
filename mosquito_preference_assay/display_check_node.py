@@ -54,10 +54,15 @@ params file drives both):
     duration_sec      double  0.0      0 = stay up until closed
     surface_px        string  ""       "x0,y0,x1,y1" starting rectangle;
                                        "" = a centred box inset from the screen
-    out_file          string  display_alignment.yaml   where `s` saves to
+    out_file          string  ""       where `s` saves to:
+                                         ""          -> ./<YYYYMMDD>_display_config.yaml
+                                         a directory -> <dir>/<YYYYMMDD>_display_config.yaml
+                                         a .yaml path -> exactly that
 """
 
+import datetime
 import sys
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -68,6 +73,23 @@ from .stimulus_publisher_node import _resolve_experiment_file
 
 INK = 20
 ACCENT = "#d95f02"
+
+
+def _resolve_out_file(spec):
+    """Where `s` writes. Date-stamped by default, because an alignment is a
+    measurement of the rig on a particular day -- after the projector is
+    bumped, the old numbers are wrong and you want both files to still exist.
+
+    "" -> ./<date>_display_config.yaml · a directory -> that name inside it ·
+    anything else -> used verbatim."""
+    name = f"{datetime.date.today():%Y%m%d}_display_config.yaml"
+    spec = (spec or "").strip()
+    if not spec:
+        return str(Path.cwd() / name)
+    path = Path(spec).expanduser()
+    if path.is_dir() or spec.endswith("/"):
+        return str(path / name)
+    return str(path)
 
 
 def _rect_param(node, name):
@@ -103,8 +125,8 @@ class DisplayCheck(Node):
         window_w = int(self.declare_parameter("window_w", 1200).value)
         window_h = int(self.declare_parameter("window_h", 800).value)
         self.duration_sec = float(self.declare_parameter("duration_sec", 0.0).value)
-        self.out_file = str(self.declare_parameter(
-            "out_file", "display_alignment.yaml").value)
+        self.out_file = _resolve_out_file(
+            str(self.declare_parameter("out_file", "").value))
         self.surface_px = _rect_param(self, "surface_px")
         window_pos = _center_param(self, "window_pos")
         left_center = _center_param(self, "left_center_px")
@@ -127,6 +149,7 @@ class DisplayCheck(Node):
             f"experiment={self.experiment.name!r} "
             f"(circle {self.experiment.circle_diameter_px} px)"
         )
+        self.get_logger().info(f"'s' will save to {self.out_file}")
 
 
 def run_pattern(node):
@@ -295,7 +318,7 @@ def _save(node, state):
         node.get_logger().error(f"could not write {node.out_file}: {exc}")
         return f"could not write {node.out_file}"
     node.get_logger().info(f"saved to {node.out_file}:\n{text}")
-    return f"saved to {node.out_file}"
+    return f"saved to {Path(node.out_file).name}"
 
 
 def _corner_brackets(py5, width, height):

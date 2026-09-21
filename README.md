@@ -443,10 +443,23 @@ luck. The pattern shows:
 of the projector's output that actually falls on the surface you care about,
 which is usually not the whole frame. Drag it over the real illuminated area
 (corners resize it), then drag the circles into place inside it. `[` / `]`
-resize the circles, `s` writes everything to `out_file` (default
-`display_alignment.yaml`) as a params snippet you can paste into
-`assay_params.yaml` or pass straight back with `--params-file`, `r` resets to
-the config, `q` or ESC closes.
+resize the circles, `s` saves, `r` resets to the config, `q` or ESC closes.
+
+**Saving** writes a **date-stamped** file, `<YYYYMMDD>_display_config.yaml` —
+an alignment is a measurement of the rig on a particular day, so when the
+projector is next bumped the old numbers are wrong but still on disk. Set
+`out_file` to a **directory** to collect them somewhere (the rig config folder
+is the natural home), or to a `.yaml` path to name one yourself:
+
+```bash
+ros2 launch mosquito_preference_assay display_check.launch.py \
+    fullscreen:=true monitor:=2 out_file:=~/rig
+```
+
+The startup log prints the absolute path it will save to, and saving prints it
+again — the default is relative to wherever you launched from, which is easy
+to lose. The file is a valid params file, so paste it into `assay_params.yaml`
+or pass it straight back with `--params-file`.
 
 ```yaml
 /**:

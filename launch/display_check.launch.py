@@ -26,7 +26,7 @@ Arguments
     fullscreen     ""   set to override the params file
     monitor        ""   set to override the params file
     duration_sec   0.0  0 = stay up until closed
-    out_file       display_alignment.yaml
+    out_file       ""   "" -> ./<YYYYMMDD>_display_config.yaml; or a dir, or a path
 """
 
 import os
@@ -72,6 +72,6 @@ def generate_launch_description():
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),
         DeclareLaunchArgument("duration_sec", default_value="0.0"),
-        DeclareLaunchArgument("out_file", default_value="display_alignment.yaml"),
+        DeclareLaunchArgument("out_file", default_value=""),
         OpaqueFunction(function=_node),
     ])
