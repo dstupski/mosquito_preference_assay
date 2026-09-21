@@ -530,6 +530,41 @@ on 14 May" is something you will want when interpreting results, and both
 calibration and alignment need redoing whenever a projector or camera is
 physically bumped.
 
+### Building so your edits take effect immediately
+
+Build once with `--symlink-install` and you stop rebuilding after every edit:
+
+```bash
+colcon build --packages-select mosquito_preference_assay --symlink-install
+source install/setup.bash
+```
+
+The install space then symlinks through the build space to your **source
+tree**, so these are live the moment you save:
+
+| Edit | Live? |
+|---|---|
+| any `.py` under `mosquito_preference_assay/` | ✅ next time the node starts |
+| `experiments/*.yaml`, `config/*.yaml`, `launch/*.py` | ✅ next launch |
+| anything under `tools/` | ✅ always — never installed, you run it from source |
+| **`setup.py` (a new entry point) or `package.xml`** | ❌ rebuild |
+
+Nothing is live *within* a running process: the sketch reads its experiment
+once at startup, so "live" means the next `ros2 run` / `ros2 launch`, not
+mid-trial.
+
+**Switching an existing workspace over, and why it is worth doing:** colcon
+never *removes* files from the install space, so a plain build leaves deleted
+files behind indefinitely. This workspace still had two experiment files that
+were deleted from the source months earlier, which meant
+`experiment_file:=grating_speed_sweep` worked here and would fail on any fresh
+clone. Clear the package out as you switch:
+
+```bash
+rm -rf build/mosquito_preference_assay install/mosquito_preference_assay
+colcon build --packages-select mosquito_preference_assay --symlink-install
+```
+
 ### `params_file:=` replaces, it does not merge
 
 A launch file passes **one** params file. Anything you leave out falls back to
