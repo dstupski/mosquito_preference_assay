@@ -12,6 +12,12 @@ build/
 install/
 log/
 
+# Rig alignment written by display_check. These describe THIS machine's
+# projector on a given day, so they are never ours to track -- and ignoring
+# them also means `git clean -fd` will not sweep them away.
+*_display_config.yaml
+display_alignment.yaml
+
 # rosbags
 *.db3
 *.mcap
