@@ -14,22 +14,24 @@ graphics; ROS 2 Humble for the plumbing.
 
 ## Contents
 
-- [How it works](#how-it-works)
-- [Setup](#setup) · [choosing the display](#choosing-the-display) · [dependency reference](#dependency-reference)
-- [Quick start](#quick-start)
-- [Writing an experiment](#writing-an-experiment) · [ten-stimulus panel](#the-ten-stimulus-panel) · [stimulus GIFs](#rendering-stimulus-gifs)
-- [Triggering](#triggering) · [`test_trigger`](#test_trigger--fire-the-trigger-on-command)
-- [Detecting a mosquito](#detecting-a-mosquito) · [`video_publisher`](#testing-without-a-camera-video_publisher) · [`dual_video_publisher`](#two-synchronized-cameras-dual_video_publisher)
-- [Real-time stereo tracking](#real-time-stereo-tracking) — `tracker` + `stereo_sync`
-- [Watching a trajectory live](#watching-a-trajectory-live-trajectory_plotter) — `trajectory_plotter`
-- [3D triangulation](#3d-triangulation) — `triangulator`
-- [Benchmarking and latency](#benchmarking-and-latency) — `benchmark` + `pipeline_monitor`
-- [ROS parameters](#ros-parameters)
-- [Published messages](#published-messages)
-- [Reproducing a run offline](#reproducing-a-run-offline)
-- [Adding a new marker behavior](#adding-a-new-marker-behavior)
-- [Development](#development)
-- [License & citing](#license--citing)
+**Start here** — [how it works](#how-it-works) · [setup](#setup) · [quick start](#quick-start)
+
+**Running the assay** — [writing an experiment](#writing-an-experiment) ·
+[the stimulus display](#the-stimulus-display) · [triggering](#triggering) ·
+[the rig workflow](#detector-armed-capture--the-rig-workflow)
+
+**Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
+[stereo tracking](#real-time-stereo-tracking) ·
+[3D triangulation](#3d-triangulation) ·
+[benchmarking and latency](#benchmarking-and-latency)
+
+**For talks** — [GIFs, slide graphics and videos](#figures-and-videos-for-talks)
+
+**Reference** — [ROS parameters](#ros-parameters) ·
+[published messages](#published-messages) ·
+[reproducing a run](#reproducing-a-run-offline) ·
+[adding a marker behavior](#adding-a-new-marker-behavior) ·
+[development](#development) · [license](#license--citing)
 
 ---
 
@@ -75,58 +77,51 @@ sides, every resolved parameter. It's logged at startup and in
 
 ### Repository layout
 
+Nodes are grouped by what they are for. Every one is a console script, so
+`ros2 run mosquito_preference_assay <name>`.
+
+**The assay** — the stimulus display and its trial logic
+
+| | |
+|---|---|
+| `stimuli.py` · `stimulus_types.py` | the marker behaviors, and the type registry |
+| `param_spec.py` · `experiment.py` | literal-or-random params; load/validate the YAML and draw a trial |
+| `assay.py` | the py5 sketch, display selection, thread-safe `current_state()` |
+| `stimulus_publisher` | the ROS node that runs the sketch and publishes what is on screen |
+| `display_check` | test pattern on the configured display, drag-to-align |
+| `test_trigger` | bench helper: fire the trigger by hand |
+| `snapshot_supervisor` | flushes a `--snapshot-mode` bag at trial start / end |
+
+**Tracking** — camera in, 3D position out
+
+| | |
+|---|---|
+| `detection.py` | background-subtraction blob detection (ported from test_videos_particle_tracking) |
+| `mosquito_detector` | watches a feed, publishes detection events — the trigger |
+| `tracker` | real-time 2D tracking, **one instance per camera** |
+| `stereo_sync` | pairs two `tracker` outputs by timestamp |
+| `triangulator` | a stereo pair → a real 3D position in mm, via the rig calibration |
+| `trajectory_plotter` | live 3D plot of a position stream |
+
+**Standing in for hardware, and measuring it**
+
+| | |
+|---|---|
+| `frame_source.py` · `video_publisher` · `dual_video_publisher` | replay footage as one or two synchronized camera feeds |
+| `synthetic_trajectory_publisher` | a made-up 3D track, for testing the plotter |
+| `benchmark` · `pipeline_monitor` | per-component cost; live per-stage lag, rate and yield |
+
+**Everything else**
+
 ```
-mosquito_preference_assay/
-  stimuli.py                   marker behaviors (Stimulus subclasses)
-  stimulus_types.py            type registry + build_stimulus()
-  param_spec.py                literal-or-random parameter resolution
-  experiment.py                load/validate the YAML; the trial draw
-  assay.py                     the py5 sketch + thread-safe current_state()
-  stimulus_publisher_node.py   the ROS 2 node
-  test_trigger_node.py         bench helper: publish the Bool trigger on command
-  snapshot_supervisor_node.py  flushes a --snapshot-mode bag at trial start / end
-  display_check_node.py        test pattern on the configured display + drag-to-align
-  detection.py                 background-subtraction blob detection (ported
-                                from test_videos_particle_tracking)
-  mosquito_detector_node.py    watches a camera feed, publishes detection events
-  frame_source.py               shared video-file / frame-directory reader
-  video_publisher_node.py      plays a video / frame directory as a pseudo camera feed
-  dual_video_publisher_node.py  two SYNCHRONIZED pseudo camera feeds (one shared timer)
-  tracker_node.py               real-time 2D blob tracking, one camera per instance
-  stereo_sync_node.py           pairs two tracker_node outputs by timestamp
-  trajectory_plotter_node.py    live matplotlib 3D plot of a position stream
-  synthetic_trajectory_publisher_node.py  made-up 3D trajectory, for testing the plotter
-  triangulator_node.py          stereo pair -> real 3D position (mm), via the rig calibration
-  pipeline_monitor_node.py      live per-stage lag / rate / yield reporting
-  benchmark_node.py             per-component timings: what this machine can do
-experiments/                   experiment definitions (installed to share/)
-  two_choice_default.yaml       random draw of 2 markers (also the built-in default)
-  control_vs_grating.yaml       mode: pairs — control vs a random grating band
-  single_trigger.yaml           triggered 15 s trial, then everything concludes
-  ten_stimulus_panel.yaml       10-stimulus panel: blank, static, 2 jitter levels,
-                                 telescope in/out, gratings up/down/in/out
-tools/
-  render_stimulus_gifs.py       render an animated GIF of every stimulus in an
-                                 experiment file (for talks / checking a stimulus)
-  render_tracking_video.py      render a presentation video: both camera feeds with
-                                 detections + the 3D flight path building up
-  render_experiment_figure.py   slide graphic explaining the assay: the camera view
-                                 with the detection, what the mosquito is shown, design
-  list_displays.py              which display is which, for picking `monitor`
-media/stimulus_gifs/           the rendered GIFs, committed so they are usable
-                                 without a py5/Java/display setup
-config/
-  assay_params.yaml             operational ROS params for stimulus_publisher
-  detector_params.yaml          ROS params for mosquito_detector
-launch/
-  assay.launch.py               stimulus_publisher + its params file
-  detector.launch.py            mosquito_detector + its params file
-  display_check.launch.py       display_check with the assay's own params file
-  triggered_capture.launch.py   stimulus_publisher (triggered) + ros2 bag record + auto-shutdown
-  triggered_assay.launch.py     the rig workflow: display ARMED on the projector +
-                                 detector + recorder, stimuli appear on detection
-  tracking_benchmark.launch.py  whole tracking pipeline + pipeline_monitor, on recorded footage
-test/                          unit + lint tests
+experiments/    two_choice_default · control_vs_grating · single_trigger · ten_stimulus_panel
+config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
+launch/         assay · detector · display_check · triggered_capture
+                triggered_assay (the rig workflow) · tracking_benchmark
+tools/          list_displays · render_stimulus_gifs · render_experiment_figure
+                render_tracking_video
+media/          the rendered stimulus GIFs, committed so they work without py5
+test/           unit + lint tests
 ```
 
 ---
@@ -169,100 +164,6 @@ ros2 run mosquito_preference_assay assay
 If step 6 shows two circles and prints `[assay] trial 0: ...`, you're set —
 go to [Quick start](#quick-start). If `import py5` fails, see **`JAVA_HOME`**
 below.
-
-### Choosing the display
-
-The stimulus display is selected with two ROS params, so the same build runs on
-a laptop screen or a projector without edits:
-
-| Param | Meaning |
-|---|---|
-| `fullscreen` | `true` for the mosquito-facing display |
-| `monitor` | `""` primary · `N` that display (1-based) · `span` all of them |
-| `window_pos` | windowed only: `"x,y"` on the virtual desktop, e.g. `"1920,0"` |
-
-**Finding which `N` the projector is.** `monitor` is handed to Processing's
-`full_screen(N)`, which indexes the Java AWT screen-device list — *not*
-necessarily the order xrandr prints or the order shown in your desktop
-settings. Ask directly:
-
-```bash
-python3 tools/list_displays.py
-```
-
-```
-  monitor:= resolution   position     awt id     output
-  1         1920x1080    +0+0         :0.0       HDMI-0  [primary]
-  2         2560x1440    +1920+0      :0.1       DP-0
-```
-
-When two displays share a resolution the output names can't disambiguate them,
-so confirm by eye — this opens a fullscreen panel showing the index on each
-screen in turn:
-
-```bash
-python3 tools/list_displays.py --identify        # every display
-python3 tools/list_displays.py --identify 2      # just this one
-```
-
-A `monitor` that doesn't exist now fails at startup with the list of what does,
-instead of a Java traceback several frames later. Whichever display it ends up
-on is recorded in every `stimulus_state` / `trial_start` message under
-`geometry.display` (index, resolution, position), so a bag says which physical
-screen the animal was actually shown:
-
-```json
-"display": {"index": 2, "id": ":0.1", "width": 2560, "height": 1440, "x": 1920, "y": 0}
-```
-
-**Check it, and align it to the arena.** `display_check` puts a test pattern
-on whichever display the config selects, so you can confirm the projector is
-the one that lights up before running an animal:
-
-```bash
-ros2 launch mosquito_preference_assay display_check.launch.py
-ros2 launch mosquito_preference_assay display_check.launch.py fullscreen:=true monitor:=2
-```
-
-It loads the same `config/assay_params.yaml` the assay loads and hands the
-settings to `assay.settings()` — the very function the real sketch uses to
-pick a screen — so it is not a parallel implementation that might agree by
-luck. The pattern shows:
-
-| On screen | What it tells you |
-|---|---|
-| corner brackets | a clipped or missing one means the projector is overscanning, or the resolution is wrong |
-| the two stimulus circles | exactly where the experiment's geometry will put them, at the configured diameter |
-| live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
-| display index, resolution, position | which screen it *actually* opened on, beside the one requested |
-
-**Aligning:** a dashed rectangle marks the **projection surface** — the part
-of the projector's output that actually falls on the surface you care about,
-which is usually not the whole frame. Drag it over the real illuminated area
-(corners resize it), then drag the circles into place inside it. `[` / `]`
-resize the circles, `s` writes everything to `out_file` (default
-`display_alignment.yaml`) as a params snippet you can paste into
-`assay_params.yaml` or pass straight back with `--params-file`, `r` resets to
-the config, `q` or ESC closes.
-
-```yaml
-/**:
-  ros__parameters:
-    left_center_px: "500,600"
-    right_center_px: "1920,720"
-    surface_px: "510,390,2323,1317"
-```
-
-`display_check` reads `surface_px` back, so the rectangle starts where you
-left it. **The assay does not consume it yet** — stimulus centres are absolute
-screen pixels, so keeping them inside the rectangle is currently down to you.
-
-**Stop the projector blanking.** An idle X session will blank the screen and
-DPMS will power it down mid-experiment. On the rig machine:
-
-```bash
-xset s off; xset s noblank; xset -dpms
-```
 
 ### Dependency reference
 
@@ -421,29 +322,6 @@ It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
 is sampled across enough animals); the file's header comment shows the
 `mode: pairs` block to paste in for a control-versus-each design instead.
 
-### Rendering stimulus GIFs
-
-```bash
-python3 tools/render_stimulus_gifs.py \
-    --experiment experiments/ten_stimulus_panel.yaml --out-dir ./stimulus_gifs
-```
-
-Writes one animated GIF per stimulus — for talks and posters, and for checking
-at a glance that a stimulus does what its name says. The frames come from the
-**real stimulus classes in a real py5 sketch**, driven from the experiment
-YAML, so a GIF cannot drift from what the assay actually displays: change a
-parameter, re-render, and the GIF changes with it. Needs py5 (so Java 17), a
-display, and Pillow.
-
-Options: `--seconds` (3.0), `--fps` (20), `--size` (circle diameter + 80),
-`--only NAME [...]` to render a subset, `--keep-frames` to keep the PNGs.
-
-The current renders of the ten-stimulus panel are committed under
-[`media/stimulus_gifs/`](media/stimulus_gifs/) — ten GIFs plus a contact sheet
-of all of them as stills — so they can be picked up on another machine without
-installing py5. They are generated files: re-render them after changing the
-panel, or they will quietly go stale.
-
 ### Choosing an experiment at launch
 
 ```bash
@@ -456,6 +334,103 @@ Malformed definitions fail at startup with a specific message — unknown
 `type`, unknown param name, a stimulus referenced in `conditions` that isn't
 defined, a bad random spec, `mode: sample` with < 2 pool entries, `mode: pairs`
 with no `pairs:` list, and so on.
+
+---
+
+## The stimulus display
+
+The stimulus display is selected with two ROS params, so the same build runs on
+a laptop screen or a projector without edits:
+
+| Param | Meaning |
+|---|---|
+| `fullscreen` | `true` for the mosquito-facing display |
+| `monitor` | `""` primary · `N` that display (1-based) · `span` all of them |
+| `window_pos` | windowed only: `"x,y"` on the virtual desktop, e.g. `"1920,0"` |
+
+**Finding which `N` the projector is.** `monitor` is handed to Processing's
+`full_screen(N)`, which indexes the Java AWT screen-device list — *not*
+necessarily the order xrandr prints or the order shown in your desktop
+settings. Ask directly:
+
+```bash
+python3 tools/list_displays.py
+```
+
+```
+  monitor:= resolution   position     awt id     output
+  1         1920x1080    +0+0         :0.0       HDMI-0  [primary]
+  2         2560x1440    +1920+0      :0.1       DP-0
+```
+
+When two displays share a resolution the output names can't disambiguate them,
+so confirm by eye — this opens a fullscreen panel showing the index on each
+screen in turn:
+
+```bash
+python3 tools/list_displays.py --identify        # every display
+python3 tools/list_displays.py --identify 2      # just this one
+```
+
+A `monitor` that doesn't exist now fails at startup with the list of what does,
+instead of a Java traceback several frames later. Whichever display it ends up
+on is recorded in every `stimulus_state` / `trial_start` message under
+`geometry.display` (index, resolution, position), so a bag says which physical
+screen the animal was actually shown:
+
+```json
+"display": {"index": 2, "id": ":0.1", "width": 2560, "height": 1440, "x": 1920, "y": 0}
+```
+
+**Check it, and align it to the arena.** `display_check` puts a test pattern
+on whichever display the config selects, so you can confirm the projector is
+the one that lights up before running an animal:
+
+```bash
+ros2 launch mosquito_preference_assay display_check.launch.py
+ros2 launch mosquito_preference_assay display_check.launch.py fullscreen:=true monitor:=2
+```
+
+It loads the same `config/assay_params.yaml` the assay loads and hands the
+settings to `assay.settings()` — the very function the real sketch uses to
+pick a screen — so it is not a parallel implementation that might agree by
+luck. The pattern shows:
+
+| On screen | What it tells you |
+|---|---|
+| corner brackets | a clipped or missing one means the projector is overscanning, or the resolution is wrong |
+| the two stimulus circles | exactly where the experiment's geometry will put them, at the configured diameter |
+| live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
+| display index, resolution, position | which screen it *actually* opened on, beside the one requested |
+
+**Aligning:** a dashed rectangle marks the **projection surface** — the part
+of the projector's output that actually falls on the surface you care about,
+which is usually not the whole frame. Drag it over the real illuminated area
+(corners resize it), then drag the circles into place inside it. `[` / `]`
+resize the circles, `s` writes everything to `out_file` (default
+`display_alignment.yaml`) as a params snippet you can paste into
+`assay_params.yaml` or pass straight back with `--params-file`, `r` resets to
+the config, `q` or ESC closes.
+
+```yaml
+/**:
+  ros__parameters:
+    left_center_px: "500,600"
+    right_center_px: "1920,720"
+    surface_px: "510,390,2323,1317"
+```
+
+`display_check` reads `surface_px` back, so the rectangle starts where you
+left it. **The assay does not consume it yet** — stimulus centres are absolute
+screen pixels, so keeping them inside the rectangle is currently down to you.
+
+**Stop the projector blanking.** An idle X session will blank the screen and
+DPMS will power it down mid-experiment. On the rig machine:
+
+```bash
+xset s off; xset s noblank; xset -dpms
+```
+
 
 ---
 
@@ -570,7 +545,7 @@ fires `OnProcessExit → Shutdown`, which still SIGINTs the recorder so
 
 | Launch arg | Default | |
 |---|---|---|
-| `fullscreen` / `monitor` | `false` / `""` | the projector — see [Choosing the display](#choosing-the-display) |
+| `fullscreen` / `monitor` | `false` / `""` | the projector — see [the stimulus display](#the-stimulus-display) |
 | `detector_params` | `config/detector_params.yaml` | detector tuning |
 | `image_topic` | `""` | `""` leaves the params file authoritative |
 | `trigger_topic` | `/arena/mosquito_present` | the launch file forces **both** ends onto this, rather than trusting two config files to agree |
@@ -612,7 +587,7 @@ which (via `trigger.msg_type: string`, above) is also what arms the trial.
 **Algorithm:** background subtraction against a static reference frame
 (captured once, from the first image received), restricted to `roi`,
 blob-area filtered — the same approach and parameter names as
-[`test_videos_particle_tracking`](../test_videos_particle_tracking)'s
+`test_videos_particle_tracking`'s
 `detection.py` (ported into `detection.py` here so this package stays
 self-contained; frame-to-frame track linking isn't needed for a live
 trigger). A detection fires once `consecutive_frames` frames in a row have a
@@ -1038,6 +1013,65 @@ arguments to benchmark tracking only. Useful arguments: `rate_hz`, `loop`,
 `roi_a`/`roi_b`, `image_qos`, `max_reprojection_error_px`, `plot:=true` for
 the live 3D view, `watch_images:=true` for input-rate accounting.
 
+### Measured: where the time goes at 200 fps
+
+End-to-end (image published → 3D point delivered), 776 real frame pairs:
+
+| Config | Median lag | Points (of 758) | Throughput |
+|---|---|---|---|
+| 200 Hz, `reliable` | 56 ms | 758 | 181 Hz |
+| 200 Hz, `sensor_data` | **7.2 ms** | 646 | 181 Hz |
+| 150 Hz, `sensor_data` | **6.9 ms** | 716 | 150 Hz |
+| 150 Hz, `reliable` | 16 ms | **758** | 150 Hz |
+
+**The `image_qos` choice is a real trade, not a tuning knob.** `reliable`
+queues (depth 10) rather than dropping, so every frame is processed but lag
+grows to roughly *queue depth × frame interval* under load — 56 ms ≈ 11
+frames at 200 Hz. `sensor_data` (best-effort) always works on the newest
+frame and discards stale ones: ~7 ms, at the cost of ~15% of frames when
+saturated. Use `sensor_data` for closed-loop triggering where freshness
+wins, `reliable` when recording a complete trajectory.
+
+Two things that are *not* levers, both measured: shrinking the ROI only
+touches the detection term (there is a ~3.6 ms floor even at 200×200 px,
+because the full frame is still encoded, shipped and decoded), and the ROI is
+already close to the flight envelope — detections span 850×787 px inside the
+920×1030 `cam_a` ROI, so trimming further starts clipping real flight near
+the arena walls. Cropping at the *camera* shrinks payload, encode, transport
+and detection together; keeping full frames from crossing a process boundary
+at all (detection in the camera node, or intra-process composition) removes
+the transport term entirely.
+
+---
+
+## Figures and videos for talks
+
+Three renderers that build presentation material from the real code and real
+footage, so a figure cannot quietly disagree with what the rig does. All of
+them need py5 (so Java 17) and a display; the video renderers also need ffmpeg.
+
+### Rendering stimulus GIFs
+
+```bash
+python3 tools/render_stimulus_gifs.py \
+    --experiment experiments/ten_stimulus_panel.yaml --out-dir ./stimulus_gifs
+```
+
+Writes one animated GIF per stimulus — for talks and posters, and for checking
+at a glance that a stimulus does what its name says. The frames come from the
+**real stimulus classes in a real py5 sketch**, driven from the experiment
+YAML, so a GIF cannot drift from what the assay actually displays: change a
+parameter, re-render, and the GIF changes with it.
+
+Options: `--seconds` (3.0), `--fps` (20), `--size` (circle diameter + 80),
+`--only NAME [...]` to render a subset, `--keep-frames` to keep the PNGs.
+
+The current renders of the ten-stimulus panel are committed under
+[`media/stimulus_gifs/`](media/stimulus_gifs/) — ten GIFs plus a contact sheet
+of all of them as stills — so they can be picked up on another machine without
+installing py5. They are generated files: re-render them after changing the
+panel, or they will quietly go stale.
+
 ### A slide graphic explaining the assay
 
 ```bash
@@ -1045,25 +1079,34 @@ python3 tools/render_experiment_figure.py \
     --session /path/to/session --out experiment.mp4    # or .png for a still
 ```
 
-For talks: the arena camera with the detection that fires the trial, beside
-what the mosquito is actually shown, with the design written out underneath and
-a timeline running armed → detection → trial.
+One figure telling the whole story: the arena camera with the detection that
+fires the trial, what the mosquito is shown, a running tally of time spent in
+front of each side, and the design in four steps underneath.
 
-Both halves are real. The camera side is footage through the real
-`detection.py`; the display side is the real stimulus classes drawing the pair
-named in the experiment file. The narrative comes out of the data rather than
-being staged — the animal is tracked from the first frame and the trial fires
-when it has been inside the trigger zone for `--consecutive` frames, which in
-the bundled footage takes about two seconds, so the "armed, waiting" phase is
-genuinely waiting.
+| Part | |
+|---|---|
+| trigger zone | dashed box; the trial fires once the animal is inside it for `--consecutive` frames |
+| scoring zones | the region in front of each stimulus — the marker takes that zone's colour while the animal is in it |
+| dwell bars | time accumulated on each side, on a 0-to-trial-length scale, which is how the winner is decided |
+| timeline | armed → detection → trial |
 
-`--out x.png` gives a single still at the moment of detection, for a static
-slide; `--out x.mp4` plays the phases out in time.
+Both halves are real: the camera side is footage through the real
+`detection.py`, the display side is the real stimulus classes. **The narrative
+is taken from the data, not staged** — the animal is tracked from the first
+frame and the trial fires when it genuinely enters the zone, which in the
+bundled footage is about a second in. Worth checking if you change the session
+or the zones: if the animal is already inside the zone on frame 1, the
+"armed, waiting" phase vanishes and the figure would be implying a wait that
+never happened.
 
-Options: `--left` / `--right` to choose the pair (default contrasts the static
-control against a moving stimulus), `--experiment` for a different pool,
-`--trigger-zone "x0,y0,x1,y1"`, `--consecutive` (3), `--trial-sec` (15),
-`--pre-sec` (2, how much armed to show first), `--camera`, `--title`.
+`--out x.png` gives a still at the moment of detection; `--out x.mp4` plays
+the phases out in time.
+
+Options: `--left` / `--right` choose the pair (the sides are labelled
+generically on the figure, since naming them implies a pairing that is really
+drawn at random), `--trigger-zone` and `--left-zone` / `--right-zone`
+`"x0,y0,x1,y1"`, `--consecutive` (3), `--trial-sec` (15), `--pre-sec` (2),
+`--camera`, `--experiment`, `--title`.
 
 ### A presentation video of a tracked flight
 
@@ -1098,34 +1141,6 @@ the whole path, `--downscale` (2), `--max-reprojection-error-px` (3.0),
 `--limit N` for a quick look at the first N frames, `--out x.gif` for a GIF
 instead of mp4 (mp4 needs ffmpeg).
 
-### Measured: where the time goes at 200 fps
-
-End-to-end (image published → 3D point delivered), 776 real frame pairs:
-
-| Config | Median lag | Points (of 758) | Throughput |
-|---|---|---|---|
-| 200 Hz, `reliable` | 56 ms | 758 | 181 Hz |
-| 200 Hz, `sensor_data` | **7.2 ms** | 646 | 181 Hz |
-| 150 Hz, `sensor_data` | **6.9 ms** | 716 | 150 Hz |
-| 150 Hz, `reliable` | 16 ms | **758** | 150 Hz |
-
-**The `image_qos` choice is a real trade, not a tuning knob.** `reliable`
-queues (depth 10) rather than dropping, so every frame is processed but lag
-grows to roughly *queue depth × frame interval* under load — 56 ms ≈ 11
-frames at 200 Hz. `sensor_data` (best-effort) always works on the newest
-frame and discards stale ones: ~7 ms, at the cost of ~15% of frames when
-saturated. Use `sensor_data` for closed-loop triggering where freshness
-wins, `reliable` when recording a complete trajectory.
-
-Two things that are *not* levers, both measured: shrinking the ROI only
-touches the detection term (there is a ~3.6 ms floor even at 200×200 px,
-because the full frame is still encoded, shipped and decoded), and the ROI is
-already close to the flight envelope — detections span 850×787 px inside the
-920×1030 `cam_a` ROI, so trimming further starts clipping real flight near
-the arena walls. Cropping at the *camera* shrinks payload, encode, transport
-and detection together; keeping full frames from crossing a process boundary
-at all (detection in the camera node, or intra-process composition) removes
-the transport term entirely.
 
 ---
 
@@ -1143,7 +1158,7 @@ or a `params_file`.
 | `trigger_msg_type` | `""` | `""` use the experiment's `trigger.msg_type`, else `bool`. `bool` = `std_msgs/Bool` (true start, false abort); `string` = `std_msgs/String` (any message starts) |
 | `master_seed` | `-1` | `-1` → random (logged + in `experiment_info`); `≥0` → reproducible |
 | `fullscreen` | `false` | `true` for the mosquito-facing display |
-| `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. An index that doesn't exist fails at startup listing the ones that do — see [Choosing the display](#choosing-the-display) for finding the projector's number |
+| `monitor` | `""` | `""` primary · `"2"` that display (1-indexed) · `"span"` all. Fullscreen only. An index that doesn't exist fails at startup listing the ones that do — see [the stimulus display](#the-stimulus-display) for finding the projector's number |
 | `window_pos` | `""` | windowed only — place the sketch at `"x,y"` px |
 | `window_w` / `window_h` | `1200` / `800` | ignored when `fullscreen` |
 | `left_center_px` / `right_center_px` | `""` | `"x,y"` px override of the experiment's `display.*_center_px` |
@@ -1305,3 +1320,4 @@ Washington.
 
 If you use this in a publication, please cite the repository
 (`https://github.com/dstupski/mosquito_preference_assay`).
+
