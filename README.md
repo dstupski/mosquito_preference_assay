@@ -17,8 +17,9 @@ graphics; ROS 2 Humble for the plumbing.
 **Start here** — [how it works](#how-it-works) · [setup](#setup) · [quick start](#quick-start)
 
 **Running the assay** — [writing an experiment](#writing-an-experiment) ·
-[the stimulus display](#the-stimulus-display) · [triggering](#triggering) ·
-[the rig workflow](#detector-armed-capture--the-rig-workflow)
+[the stimulus display](#the-stimulus-display) ·
+[deploying to another rig](#deploying-to-another-rig) ·
+[triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
 [stereo tracking](#real-time-stereo-tracking) ·
@@ -490,6 +491,74 @@ DPMS will power it down mid-experiment. On the rig machine:
 xset s off; xset s noblank; xset -dpms
 ```
 
+
+---
+
+## Deploying to another rig
+
+Split configuration by **what the value belongs to** — the science, the
+machine, or the session. The test: *if I moved this experiment to another rig,
+should this value travel with it?*
+
+| Belongs to | What | Where |
+|---|---|---|
+| **The science** | `experiments/*.yaml` — stimulus pool, conditions, duration, circle diameter | in the repo, committed, identical everywhere |
+| **The rig** | display / `monitor`, stimulus centres, detector ROI, camera topics, calibration | **outside the repo**, one directory per rig |
+| **The session** | bag paths, `master_seed`, one-off overrides | the command line |
+
+Stimulus definitions travel — they *are* the manipulation. A monitor index and
+a pixel centre describe a room, and must not.
+
+```
+~/rig/                                   # keep this in its own small git repo
+  arena1_assay_params.yaml               # copied from config/, then edited
+  arena1_detector_params.yaml
+  20260921_display_config.yaml           # alignments collect here, date-stamped
+  calibration/Checkerboard_2025_April_10.npy
+              Plumbline_2025_April_10.npy
+```
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    params_file:=~/rig/arena1_assay_params.yaml
+ros2 launch mosquito_preference_assay display_check.launch.py \
+    fullscreen:=true monitor:=2 out_file:=~/rig
+```
+
+Version that directory. Alignment values are *data*: "which centres were in use
+on 14 May" is something you will want when interpreting results, and both
+calibration and alignment need redoing whenever a projector or camera is
+physically bumped.
+
+### `params_file:=` replaces, it does not merge
+
+A launch file passes **one** params file. Anything you leave out falls back to
+the node's **hardcoded** default — *not* to `config/assay_params.yaml`, which
+is not read at all once you pass your own. There is one place those disagree:
+
+| | node default | `config/assay_params.yaml` |
+|---|---|---|
+| `experiment_file` | `""` → the built-in default experiment | `two_choice_default` |
+
+So a minimal rig file containing only `monitor: "2"` would silently run a
+*different experiment*. **Copy `config/assay_params.yaml` and edit the copy**
+rather than writing a short one from scratch.
+
+### Pulling updates without losing your rig files
+
+**Do not edit `config/*.yaml` in place on a rig.** Those files are tracked, so
+local edits collide with every `git pull` and you end up resolving merge
+conflicts with your calibration inside them. Untracked files pull cleanly;
+modified tracked files do not.
+
+Your `*_display_config.yaml` files are safe from `git pull` — it does not touch
+untracked files. The command that *would* have deleted them is `git clean -fd`,
+so they are now in `.gitignore`, which both keeps `git status` quiet and makes
+`clean -fd` skip them. `git clean -fdx` still removes them: `-x` deliberately
+includes ignored files.
+
+Keeping the rig directory outside the repo avoids all of this, which is the
+real reason to do it.
 
 ---
 
