@@ -350,8 +350,8 @@ a laptop screen or a projector without edits:
 
 **Finding which `N` the projector is.** `monitor` is handed to Processing's
 `full_screen(N)`, which indexes the Java AWT screen-device list — *not*
-necessarily the order xrandr prints or the order shown in your desktop
-settings. Ask directly:
+necessarily the order xrandr prints, and *not* the numbers Ubuntu's Settings →
+Displays panel shows. Do not guess from those; ask directly:
 
 ```bash
 python3 tools/list_displays.py
@@ -370,6 +370,42 @@ screen in turn:
 ```bash
 python3 tools/list_displays.py --identify        # every display
 python3 tools/list_displays.py --identify 2      # just this one
+```
+
+**Cross-checking against Ubuntu's own view.** The `output` column above comes
+from `xrandr`, which is how you tie an index to a physical connector:
+
+```bash
+xrandr --listmonitors        # one line per active monitor, with position
+xrandr | grep " connected"   # connector names, resolutions, physical size
+```
+
+```
+ 0: +*HDMI-0 1920/598x1080/336+0+0  HDMI-0      <- the * marks the primary
+ 1: +DP-0 2560/697x1440/392+1920+0  DP-0
+```
+
+Match a row to `list_displays.py` by **resolution and position** — `DP-0` at
+`+1920+0` is the `monitor:=2` line. The connector name tells you which cable:
+`HDMI-0`, `DP-0`, `DP-1`, and so on. Ubuntu's **Settings → Displays** shows the
+same monitors with an *Identify* button that flashes a number on each screen,
+which is useful for working out which physical panel is which — but those
+numbers are Ubuntu's own and do **not** map to `monitor:`. Only
+`list_displays.py --identify` shows the number this package wants.
+
+> **Wayland.** All of the above needs an **X11** session. Under Wayland,
+> `xrandr` reports a single logical output and Java runs through XWayland,
+> where fullscreen-on-a-chosen-display is unreliable. Check with
+> `echo $XDG_SESSION_TYPE` — if it prints `wayland`, log out and pick
+> "Ubuntu on Xorg" from the gear icon on the login screen.
+
+Then put the number in `config/assay_params.yaml`:
+
+```yaml
+/**:
+  ros__parameters:
+    fullscreen: true
+    monitor: "2"      # a STRING; "" = primary, "span" = all displays
 ```
 
 A `monitor` that doesn't exist now fails at startup with the list of what does,
@@ -423,6 +459,16 @@ the config, `q` or ESC closes.
 `display_check` reads `surface_px` back, so the rectangle starts where you
 left it. **The assay does not consume it yet** — stimulus centres are absolute
 screen pixels, so keeping them inside the rectangle is currently down to you.
+
+**On a second monitor.** Opening fullscreen on another display is verified:
+with `monitor:=2` here the sketch window measures 2560x1440 at +1920+0, the
+right screen, and the pattern draws correctly on it. The *dragging* has only
+been exercised by hand on the primary display — attempts to verify it on the
+second display with synthetic pointer input (`xdotool`) gave inconsistent
+results, which looks like warping the pointer rather than a real defect, since
+py5 updates `mouse_x`/`mouse_y` from motion events. If a drag on the projector
+ever moves the wrong circle or lands off-target, that is worth reporting
+rather than working around.
 
 **Stop the projector blanking.** An idle X session will blank the screen and
 DPMS will power it down mid-experiment. On the rig machine:
