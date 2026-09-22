@@ -530,6 +530,47 @@ on 14 May" is something you will want when interpreting results, and both
 calibration and alignment need redoing whenever a projector or camera is
 physically bumped.
 
+### Rehearsing a trial with no camera and no mosquito
+
+Before an animal is anywhere near the rig, check the whole path at once:
+
+```bash
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    params_file:=~/rig/arena1_assay_params.yaml \
+    experiment_file:=ten_stimulus_panel \
+    fullscreen:=true monitor:=2
+```
+
+The node comes up ARMED, `test_trigger` fires the trigger itself after
+`delay_sec` — standing in for the detector, so no camera is involved — the
+trial runs for its `duration_sec`, the node exits, and that exit closes the
+bag exactly as on a real run. In one go you see whether:
+
+- the circles land where your config says, on the screen you meant
+- your experiment file draws the trial you expect
+- the trigger path works end to end
+- the bag records **and finalizes**, with the trial inside it
+
+The two config paths are separate because they answer different questions:
+`params_file` is **this rig** (which screen, where the circles sit) and
+`experiment_file` is **the science** (which stimuli, how the pair is drawn,
+how long). `fullscreen` / `monitor` override the params file for a one-off, so
+you can rehearse on the projector without editing anything.
+
+Afterwards:
+
+```bash
+ros2 bag info <bag_dir>     # metadata.yaml present = it closed cleanly
+```
+
+Other arguments: `delay_sec` (4.0) how long ARMED before firing, `repeat_sec`
+(>0 to watch several trials), `bag_dir`, `record:=false` for display only.
+
+Like `triggered_assay.launch.py`, this file **forces** the trigger topic and
+type on both ends rather than trusting the experiment file's `trigger:` block
+to match — a display rehearsal that silently never fires would be worse than
+no rehearsal.
+
 ### Building so your edits take effect immediately
 
 Build once with `--symlink-install` and you stop rebuilding after every edit:
