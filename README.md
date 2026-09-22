@@ -20,6 +20,7 @@ graphics; ROS 2 Humble for the plumbing.
 [writing an experiment](#writing-an-experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
+[the trigger region](#setting-the-trigger-region-for-a-new-rig) ·
 [triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
@@ -907,6 +908,61 @@ Tuning a new rig: set `roi: ""` and `publish_debug_image: true`, watch
 arena (equipment, lights, reflections) — `find_candidates()` picks the
 *largest* blob, so a static bright spot outside the ROI can otherwise win
 over the mosquito.
+
+### Setting the trigger region for a new rig
+
+**Two things decide what fires a trial, and both live in
+`config/detector_params.yaml`:**
+
+| | |
+|---|---|
+| `image_topic` | *which camera*. The trigger is **single-camera**, even though tracking uses two — only this feed can start a trial |
+| `roi` | *where in that camera's frame*. `"x0,y0,x1,y1"`, x1/y1 exclusive. This is the trigger region |
+
+`roi` ships as `""`, meaning **the whole frame**. That is rarely what you want:
+equipment, indicator lights, mesh edges and reflections are all mosquito-sized
+blobs as far as the detector is concerned, and any of them can start a trial.
+Setting it is part of commissioning a rig, not an optimisation.
+
+**Deriving it.** Turn on the annotated debug image, which draws the current
+ROI box and circles whatever the detector accepts, then iterate:
+
+```bash
+# terminal 1 — the real camera, or replay footage to stand in for it
+ros2 run mosquito_preference_assay video_publisher --ros-args \
+    -p source:=/path/to/session/cam_a -p rate_hz:=20.0 -p loop:=true
+
+# terminal 2 — the detector, with a first guess at the box
+ros2 run mosquito_preference_assay mosquito_detector --ros-args \
+    -p publish_debug_image:=true -p roi:=600,300,1100,800
+
+# terminal 3 — watch it
+ros2 run rqt_image_view rqt_image_view /mosquito_detector/debug_image
+```
+
+Adjust `roi`, restart the detector, look again. You are aiming for a box that
+contains the whole region the animal can fly in and **nothing** that is not
+the animal. Then check the consequence rather than the picture:
+
+```bash
+ros2 topic echo /arena/mosquito_present
+```
+
+With no animal in the arena this should stay silent. Anything arriving is a
+false trigger, and on the rig it would burn an animal's trial on a reflection.
+
+**Starting numbers.** For the arena in the bundled footage the tracking ROIs
+are `340,40,1260,1070` (cam_a) and `350,20,1370,1070` (cam_b) — they exclude
+the equipment stand and its indicator lights in the bottom-left, which
+otherwise capture the largest-blob heuristic. They are a reasonable first
+guess for a similar framing, but they are *that* rig's numbers: re-derive
+after any camera move.
+
+**Related knobs in the same file:** `consecutive_frames` (3) is how many
+frames in a row must contain a blob before it counts, which suppresses
+single-frame noise; `cooldown_sec` (10) is the minimum gap between triggers.
+Together they decide how twitchy the trigger is, and neither substitutes for a
+correct `roi`.
 
 ### JSON schema `mosquito_preference_assay/detection_event/1`
 
