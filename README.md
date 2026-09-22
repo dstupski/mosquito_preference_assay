@@ -16,7 +16,8 @@ graphics; ROS 2 Humble for the plumbing.
 
 **Start here** — [how it works](#how-it-works) · [setup](#setup) · [quick start](#quick-start)
 
-**Running the assay** — [writing an experiment](#writing-an-experiment) ·
+**Running the assay** — [setting up a new experiment](#setting-up-a-new-experiment-step-by-step) ·
+[writing an experiment](#writing-an-experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
 [triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
@@ -228,6 +229,83 @@ Keys while running: `d` toggle the debug overlay · `n` draw a fresh trial · `e
 ---
 
 ## Writing an experiment
+
+### Setting up a new experiment, step by step
+
+**1. Start from a file that already works.** Don't write one from scratch —
+copy the closest existing experiment and edit it.
+
+```bash
+cd ~/ros2_ws/src/mosquito_preference_assay/experiments
+cp ten_stimulus_panel.yaml looming_vs_static.yaml
+```
+
+Name the file after the **question**, not the stimuli — `looming_vs_static`
+tells you why the experiment exists; `experiment_3` does not.
+
+**2. Edit three things**, in this order:
+
+| In the file | Ask yourself |
+|---|---|
+| `stimuli:` | what am I showing? Each entry is a named recipe you can reuse |
+| `conditions:` | how is each trial's pair chosen? `mode: sample` draws two at random; `mode: pairs` fixes the comparisons |
+| `duration_sec:` | how long does one animal see it? |
+
+Change **one thing at a time** between stimuli you intend to compare. The two
+jitter levels in `ten_stimulus_panel.yaml` are the pattern to copy: identical
+`seed_x`/`seed_y`, different amplitude, so the only difference is the one you
+are asking about.
+
+**3. Check it loads.** Malformed files fail loudly with a specific message, so
+this catches typos before the rig is involved:
+
+```bash
+ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
+    -p experiment_file:=looming_vs_static
+```
+
+**4. Look at the stimuli** — cheaper than discovering on the rig that a
+"looming" stimulus recedes:
+
+```bash
+python3 tools/render_stimulus_gifs.py \
+    --experiment experiments/looming_vs_static.yaml --out-dir /tmp/check
+```
+
+**5. Rehearse the whole trial on the rig**, with no animal — the circles in
+place, the trigger firing, the bag closing:
+
+```bash
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    params_file:=~/rig/arena1_assay_params.yaml \
+    experiment_file:=looming_vs_static fullscreen:=true monitor:=2
+```
+
+**6. Run it for real**, one animal per launch:
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    params_file:=~/rig/arena1_assay_params.yaml \
+    experiment_file:=looming_vs_static fullscreen:=true monitor:=2 \
+    bag_dir:=~/data/looming_vs_static/animal_07
+```
+
+#### Once you have collected data, treat the file as frozen
+
+Every run records the experiment's **sha1** in `~/experiment_info`. That is
+what lets you prove two animals saw the same thing. Editing a file after
+collecting data silently breaks that: the name stays the same, the sha1
+changes, and nothing warns you that animals 1-6 and animals 7-12 are no longer
+comparable.
+
+So don't edit an experiment you have data for. Copy it to a new name —
+`looming_vs_static_v2.yaml`, or better something that says what changed — and
+run that. Old bags keep pointing at the old definition, which is the whole
+point.
+
+Keep experiment files **in the repo and committed**. They are the record of
+what you did, they should be identical on every machine, and one of them plus
+its `master_seed` is enough to replay a run exactly.
 
 `experiments/two_choice_default.yaml` is the fully-commented reference. The
 shape:
