@@ -586,11 +586,26 @@ should this value travel with it?*
 Stimulus definitions travel — they *are* the manipulation. A monitor index and
 a pixel centre describe a room, and must not.
 
-**With one rig, keep it simple: edit `config/assay_params.yaml` in place and
-commit it.** It is the default, so nothing needs a `params_file:=` argument,
-your display settings are version-controlled alongside the code, and they
-arrive on the other computer with a `git clone`. For a single rig and a single
-person committing, that is the right amount of machinery.
+**Copy the boilerplate to a `.local` file and edit that.** `config/*.yaml` is
+tracked, so it is both the fully-commented boilerplate a fresh clone gets and
+a file `git pull` can rewrite. A `.local.yaml` beside it is gitignored and
+**takes precedence automatically** — every launch file prefers one when it
+exists, so no command changes:
+
+```bash
+cp config/assay_params.yaml config/assay_params.local.yaml
+# edit config/assay_params.local.yaml -- monitor, fullscreen, circle centres
+```
+
+A pull can then never touch the config you are actually running on, which is
+what you want when you are on site mid-session. A fresh clone has no `.local`
+file and simply uses the tracked boilerplate, so nothing is broken before you
+make one. The same works for `detector_params.yaml`.
+
+Copy the **whole** file rather than writing a short one: `params_file:=`
+replaces rather than merges, so anything you leave out falls back to the
+node's hardcoded default rather than to the boilerplate. Every parameter the
+node accepts is in there for that reason.
 
 **Split it out when a second rig appears.** The moment two machines each want
 their own `monitor` and circle centres, one tracked file cannot hold both —

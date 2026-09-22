@@ -1,3 +1,18 @@
+# ---------------------------------------------------------------------------
+# THIS FILE IS THE BOILERPLATE. It is tracked, so `git pull` can change it.
+#
+# For your own rig, copy it once and edit the copy:
+#
+#     cp config/detector_params.yaml config/detector_params.local.yaml
+#
+# A *.local.yaml is gitignored and takes precedence automatically -- every
+# launch file prefers it when it exists, so no command changes. Pulls will
+# never touch it, which matters when you are on site mid-session.
+#
+# Every parameter the node accepts is listed below with its default, so the
+# copy is complete: `params_file:=` REPLACES rather than merges, and anything
+# you delete falls back to the node's hardcoded default, not to this file.
+# ---------------------------------------------------------------------------
 # Configuration for the mosquito_detector node.
 #
 #   ros2 launch mosquito_preference_assay detector.launch.py

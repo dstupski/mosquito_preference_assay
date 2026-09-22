@@ -12,6 +12,11 @@ build/
 install/
 log/
 
+# Per-rig config: copy config/<name>.yaml to config/<name>.local.yaml and edit
+# that. The launch files prefer a .local.yaml when one exists, so a pull can
+# never modify the config you are actually running on.
+config/*.local.yaml
+
 # Rig alignment written by display_check. These describe THIS machine's
 # projector on a given day, so they are never ours to track -- and ignoring
 # them also means `git clean -fd` will not sweep them away.

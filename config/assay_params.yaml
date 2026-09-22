@@ -1,3 +1,18 @@
+# ---------------------------------------------------------------------------
+# THIS FILE IS THE BOILERPLATE. It is tracked, so `git pull` can change it.
+#
+# For your own rig, copy it once and edit the copy:
+#
+#     cp config/assay_params.yaml config/assay_params.local.yaml
+#
+# A *.local.yaml is gitignored and takes precedence automatically -- every
+# launch file prefers it when it exists, so no command changes. Pulls will
+# never touch it, which matters when you are on site mid-session.
+#
+# Every parameter the node accepts is listed below with its default, so the
+# copy is complete: `params_file:=` REPLACES rather than merges, and anything
+# you delete falls back to the node's hardcoded default, not to this file.
+# ---------------------------------------------------------------------------
 # Operational parameters for the mosquito_preference_assay stimulus_publisher.
 #
 # The *experiment design* (stimulus pool, conditions, duration,
@@ -61,4 +76,8 @@
 
     # --- publishing / debug ------------------------------------------- #
     heartbeat_hz: 10.0
+
+    # Seconds the node stays alive after the trial completes, so the trailing
+    # "phase: complete" messages reach the bag before it closes.
+    exit_grace_sec: 2.0
     show_debug: false

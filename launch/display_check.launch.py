@@ -29,9 +29,8 @@ Arguments
     out_file       ""   "" -> ./<YYYYMMDD>_display_config.yaml; or a dir, or a path
 """
 
-import os
 
-from ament_index_python.packages import get_package_share_directory
+from mosquito_preference_assay.config_paths import resolve_config
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -39,10 +38,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    default_params = os.path.join(
-        get_package_share_directory("mosquito_preference_assay"),
-        "config", "assay_params.yaml",
-    )
+    default_params = resolve_config("assay_params.yaml")
 
     def _node(context, *_args, **_kwargs):
         """Built at launch time so an unset override leaves the params file

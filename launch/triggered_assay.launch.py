@@ -58,7 +58,7 @@ Arguments
 import datetime
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from mosquito_preference_assay.config_paths import resolve_config
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -85,15 +85,8 @@ DEFAULT_TRIGGER_TOPIC = "/arena/mosquito_present"
 
 
 def generate_launch_description():
-    default_detector_params = os.path.join(
-        get_package_share_directory("mosquito_preference_assay"),
-        "config", "detector_params.yaml",
-    )
-
-    default_assay_params = os.path.join(
-        get_package_share_directory("mosquito_preference_assay"),
-        "config", "assay_params.yaml",
-    )
+    default_detector_params = resolve_config("detector_params.yaml")
+    default_assay_params = resolve_config("assay_params.yaml")
 
     args = [
         DeclareLaunchArgument("params_file", default_value=default_assay_params),
