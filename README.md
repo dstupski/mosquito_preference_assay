@@ -1399,7 +1399,7 @@ or a `params_file`.
 | `left_center_px` / `right_center_px` | `""` | `"x,y"` px override of the experiment's `display.*_center_px` |
 | `heartbeat_hz` | `10.0` | `stimulus_state` re-publish rate |
 | `exit_grace_sec` | `2.0` | stay up this long after a finite experiment completes |
-| `show_debug` | `false` | on-screen labels/timer overlay. **Off**: it draws text on the mosquito-facing display — \"waiting for trigger\" while armed, and the stimulus names under each circle during a trial. Press `d` to toggle it while setting up |
+| `show_debug` | `false` | on-screen labels/timer overlay. **Off**: it draws text on the mosquito-facing display — "waiting for trigger" while armed, and the stimulus names under each circle during a trial. Press `d` to toggle it while setting up |
 
 Screen selection is a ROS param (rig-specific) not an experiment-file field, so
 an experiment YAML stays portable between rigs.
