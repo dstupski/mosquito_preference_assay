@@ -115,7 +115,8 @@ Nodes are grouped by what they are for. Every one is a console script, so
 **Everything else**
 
 ```
-experiments/    two_choice_default · control_vs_grating · single_trigger · ten_stimulus_panel
+experiments/    two_choice_default · control_vs_grating · single_trigger
+                ten_stimulus_panel · jitter_amplitude
 config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
 launch/         assay · detector · display_check · triggered_capture
                 triggered_assay (the rig workflow) · tracking_benchmark

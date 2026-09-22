@@ -1,0 +1,108 @@
+# Does a wandering target attract more than a still one, and does wandering
+# FURTHER attract more still?
+#
+# Four stimuli, so six possible pairings. mode: sample draws two distinct ones
+# per trial, so across enough animals every pairing is sampled:
+#
+#     blank         nothing at all          -- is anything better than nothing?
+#     static_black  a still dark circle     -- is motion doing the work, or is
+#                                              a dark target enough?
+#     jitter_small  wanders +/-30 px        -- the manipulation
+#     jitter_large  wanders +/-80 px        -- the same, 2.7x further
+#
+# The jitter pair is the comparison this file exists for, so it is set up as a
+# ONE-VARIABLE manipulation: identical fill, identical noise_speed, and
+# identical seed_x/seed_y, which makes both trace the SAME path and differ in
+# amplitude alone. Without the pinned seeds they wander independently and a few
+# seconds of Perlin noise does not reliably show the larger one as larger --
+# measured 1.57x spread for a 2x amplitude, and near-identical in y. Pinned,
+# the excursion ratio is exactly 80/30 on every axis.
+#
+# ---------------------------------------------------------------------------
+# RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
+# same file runs on any rig and two rigs running it show the same thing.
+# Which screen, and where on it, comes from your assay params instead:
+#
+#     ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+#         params_file:=~/rig/arena1_assay_params.yaml \
+#         experiment_file:=jitter_amplitude \
+#         fullscreen:=true monitor:=2
+#
+# See the README, "Deploying to another rig". The one overlap is the circle
+# centres: the display: block below sets them, and `left_center_px` /
+# `right_center_px` in your assay params override them, which is what
+# display_check writes when you drag the circles into place.
+# ---------------------------------------------------------------------------
+schema: mosquito_preference_assay/experiment/1
+name: jitter_amplitude
+description: >-
+  Blank and static-dark controls against two jitter amplitudes that trace the
+  same path, to separate "is it moving" from "how far is it moving".
+
+stimuli:
+  # 1. empty side -- the floor of the assay
+  blank:
+    type: blank
+
+  # 2. present but motionless -- separates "a target" from "a moving target"
+  static_black:
+    type: static_dark
+    params: {fill_gray: 20}
+
+  # 3. the smaller wander
+  jitter_small:
+    type: jitter
+    params:
+      fill_gray: 20
+      amplitude_px: 30
+      noise_speed: 1.2
+      # pinned, and identical in jitter_large -- see the header
+      seed_x: 111.0
+      seed_y: 777.0
+
+  # 4. the same path, 2.7x further from centre at every instant
+  jitter_large:
+    type: jitter
+    params:
+      fill_gray: 20
+      amplitude_px: 80
+      noise_speed: 1.2
+      seed_x: 111.0
+      seed_y: 777.0
+
+conditions:
+  # Two distinct stimuli per trial, drawn at random, sides randomised. Over
+  # enough animals this samples all six pairings evenly.
+  mode: sample
+
+  # To run specific comparisons instead of sampling -- fewer animals per
+  # question, but you choose the questions -- replace the line above with:
+  #
+  # mode: pairs
+  # pairs:
+  #   - {a: jitter_small,  b: jitter_large}    # the amplitude question
+  #   - {a: static_black,  b: jitter_small}    # does motion matter at all
+  #   - {a: blank,         b: static_black}    # does a target matter at all
+  #
+  # {a, b} randomises which side each lands on; {left, right} pins them.
+
+duration_sec: 15.0
+
+display:
+  circle_diameter_px: 220
+
+  # White ground, so the dark circles are maximum contrast. At +/-80 px the
+  # large jitter stays well inside the gap between the two positions.
+  background_gray: 255
+
+  # null -> auto: left at a quarter of the screen width, right at three
+  # quarters, both at mid-height. Override per rig with left_center_px /
+  # right_center_px in your assay params (display_check writes these), rather
+  # than editing them here -- this file should stay rig-independent.
+  left_center_px: null
+  right_center_px: null
+
+# Presence of this block makes the run triggered: the node opens ARMED and
+# waits. triggered_assay.launch.py overrides the topic to wire the detector in.
+trigger:
+  topic: /arena/mosquito_present
