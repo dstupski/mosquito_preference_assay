@@ -27,8 +27,6 @@ graphics; ROS 2 Humble for the plumbing.
 [3D triangulation](#3d-triangulation) ·
 [benchmarking and latency](#benchmarking-and-latency)
 
-**For talks** — [GIFs, slide graphics and videos](#figures-and-videos-for-talks)
-
 **Reference** — [ROS parameters](#ros-parameters) ·
 [published messages](#published-messages) ·
 [reproducing a run](#reproducing-a-run-offline) ·
@@ -120,9 +118,7 @@ experiments/    two_choice_default · control_vs_grating · single_trigger · te
 config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
 launch/         assay · detector · display_check · triggered_capture
                 triggered_assay (the rig workflow) · tracking_benchmark
-tools/          list_displays · render_stimulus_gifs · render_experiment_figure
-                render_tracking_video
-media/          the rendered stimulus GIFs, committed so they work without py5
+tools/          list_displays
 test/           unit + lint tests
 ```
 
@@ -264,12 +260,12 @@ ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
     -p experiment_file:=looming_vs_static
 ```
 
-**4. Look at the stimuli** — cheaper than discovering on the rig that a
-"looming" stimulus recedes:
+**4. Look at the stimuli** before the rig is involved — cheaper than
+discovering mid-session that a "looming" stimulus recedes. The no-ROS preview
+draws a trial from your file and nothing else; `n` redraws a fresh pair:
 
 ```bash
-python3 tools/render_stimulus_gifs.py \
-    --experiment experiments/looming_vs_static.yaml --out-dir /tmp/check
+ros2 run mosquito_preference_assay assay
 ```
 
 **5. Rehearse the whole trial on the rig**, with no animal — the circles in
@@ -1323,106 +1319,6 @@ the arena walls. Cropping at the *camera* shrinks payload, encode, transport
 and detection together; keeping full frames from crossing a process boundary
 at all (detection in the camera node, or intra-process composition) removes
 the transport term entirely.
-
----
-
-## Figures and videos for talks
-
-Three renderers that build presentation material from the real code and real
-footage, so a figure cannot quietly disagree with what the rig does. All of
-them need py5 (so Java 17) and a display; the video renderers also need ffmpeg.
-
-### Rendering stimulus GIFs
-
-```bash
-python3 tools/render_stimulus_gifs.py \
-    --experiment experiments/ten_stimulus_panel.yaml --out-dir ./stimulus_gifs
-```
-
-Writes one animated GIF per stimulus — for talks and posters, and for checking
-at a glance that a stimulus does what its name says. The frames come from the
-**real stimulus classes in a real py5 sketch**, driven from the experiment
-YAML, so a GIF cannot drift from what the assay actually displays: change a
-parameter, re-render, and the GIF changes with it.
-
-Options: `--seconds` (3.0), `--fps` (20), `--size` (circle diameter + 80),
-`--only NAME [...]` to render a subset, `--keep-frames` to keep the PNGs.
-
-The current renders of the ten-stimulus panel are committed under
-[`media/stimulus_gifs/`](media/stimulus_gifs/) — ten GIFs plus a contact sheet
-of all of them as stills — so they can be picked up on another machine without
-installing py5. They are generated files: re-render them after changing the
-panel, or they will quietly go stale.
-
-### A slide graphic explaining the assay
-
-```bash
-python3 tools/render_experiment_figure.py \
-    --session /path/to/session --out experiment.mp4    # or .png for a still
-```
-
-One figure telling the whole story: the arena camera with the detection that
-fires the trial, what the mosquito is shown, a running tally of time spent in
-front of each side, and the design in four steps underneath.
-
-| Part | |
-|---|---|
-| trigger zone | dashed box; the trial fires once the animal is inside it for `--consecutive` frames |
-| scoring zones | the region in front of each stimulus — the marker takes that zone's colour while the animal is in it |
-| dwell bars | time accumulated on each side, on a 0-to-trial-length scale, which is how the winner is decided |
-| timeline | armed → detection → trial |
-
-Both halves are real: the camera side is footage through the real
-`detection.py`, the display side is the real stimulus classes. **The narrative
-is taken from the data, not staged** — the animal is tracked from the first
-frame and the trial fires when it genuinely enters the zone, which in the
-bundled footage is about a second in. Worth checking if you change the session
-or the zones: if the animal is already inside the zone on frame 1, the
-"armed, waiting" phase vanishes and the figure would be implying a wait that
-never happened.
-
-`--out x.png` gives a still at the moment of detection; `--out x.mp4` plays
-the phases out in time.
-
-Options: `--left` / `--right` choose the pair (the sides are labelled
-generically on the figure, since naming them implies a pairing that is really
-drawn at random), `--trigger-zone` and `--left-zone` / `--right-zone`
-`"x0,y0,x1,y1"`, `--consecutive` (3), `--trial-sec` (15), `--pre-sec` (2),
-`--camera`, `--experiment`, `--title`.
-
-### A presentation video of a tracked flight
-
-```bash
-python3 tools/render_tracking_video.py \
-    --session /path/to/session \
-    --checkerboard-file /path/Checkerboard_<date>.npy \
-    --plumbline-file /path/Plumbline_<date>.npy \
-    --out flight.mp4
-```
-
-Both camera feeds side by side with their detections circled, next to the 3D
-flight path building up frame by frame — one figure, for talks.
-
-It runs the same `detection.py` and `triangulator_node` math the live pipeline
-runs, frame for frame, so the positions and reprojection errors on screen are
-the ones the pipeline produces. It renders **offline** rather than
-screen-capturing a live run, which is what makes it frame-accurate: nothing is
-dropped because a node fell behind, and playback speed is whatever reads best
-rather than whatever the machine managed on the day. (If you want to show the
-live system's real-time behavior instead, screen-capture
-`tracking_benchmark.launch.py` with `plot:=true`.)
-
-Camera panels are cropped to the detection ROI by default, since that ROI is
-essentially the arena — `--full-frame` shows the whole sensor with the ROI
-drawn on instead. Axis limits default to the flight's own extent, so the box
-is fixed for the whole video; pass `--xlim/--ylim/--zlim` to pin the same box
-across several sessions so they can be compared.
-
-Options: `--fps` (30), `--trail N` to show only the last N points instead of
-the whole path, `--downscale` (2), `--max-reprojection-error-px` (3.0),
-`--limit N` for a quick look at the first N frames, `--out x.gif` for a GIF
-instead of mp4 (mp4 needs ffmpeg).
-
 
 ---
 
