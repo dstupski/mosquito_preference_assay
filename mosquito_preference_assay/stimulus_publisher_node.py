@@ -41,7 +41,8 @@ the `experiment_file` parameter. The rest of the parameters are operational:
     left_center_px      string  ""    "x,y" px override of display.left_center_px
     right_center_px     string  ""    "x,y" px override of display.right_center_px
     heartbeat_hz        double  10.0   stimulus_state re-publish rate
-    show_debug          bool    True   on-screen labels/timer overlay
+    show_debug          bool    False  on-screen labels/timer overlay. OFF: it draws
+                                      text on the MOSQUITO-FACING display. `d` toggles it
 
 Run:
 
@@ -130,7 +131,7 @@ class StimulusPublisher(Node):
         heartbeat_hz = self.declare_parameter("heartbeat_hz", 10.0).value
         window_w = self.declare_parameter("window_w", 1200).value
         window_h = self.declare_parameter("window_h", 800).value
-        show_debug = self.declare_parameter("show_debug", True).value
+        show_debug = self.declare_parameter("show_debug", False).value
         left_center_px = _center_param(self, "left_center_px")
         right_center_px = _center_param(self, "right_center_px")
         window_pos = _center_param(self, "window_pos")

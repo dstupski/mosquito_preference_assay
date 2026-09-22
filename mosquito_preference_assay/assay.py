@@ -79,7 +79,11 @@ _cfg = {
     # this to push a window onto a second monitor without going fullscreen.
     "window_pos": None,
     "master_seed": None,       # None -> draw a random one at setup() and log it
-    "show_debug": True,
+    # OFF by default: the overlay draws text on the mosquito-facing display --
+    # "waiting for trigger" while armed, and the stimulus names under each
+    # circle during the trial. That is in the animal's field of view, so it is
+    # a confound, not just clutter. Press `d` to toggle it while setting up.
+    "show_debug": False,
     # "auto"     -> start trials immediately at setup() (default)
     # "triggered" -> open ARMED (blank), begin only when start_run() is called
     "start_mode": "auto",
@@ -114,7 +118,7 @@ _rt = {
     "right_name": "",
     "geometry": {},
     "display": None,      # the screen the sketch actually opened on
-    "show_debug": True,
+    "show_debug": False,
     "phase": "armed",     # "armed" | "running" | "complete"
     "run_id": 0,          # increments each start_run(); 0 while never triggered
     "start_pending": False,  # set by start_run(), consumed by draw() on the sketch thread

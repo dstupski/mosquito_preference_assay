@@ -70,6 +70,7 @@ from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 # Fixed here so both ends always agree, whatever the experiment file says.
 TRIGGER_TOPIC = "/display_test/trigger"
@@ -130,8 +131,13 @@ def generate_launch_description():
         parameters=[{
             "topic": TRIGGER_TOPIC,
             "mode": "timer",
-            "delay_sec": LaunchConfiguration("delay_sec"),
-            "repeat_sec": LaunchConfiguration("repeat_sec"),
+            # value_type=float, or `delay_sec:=30` arrives as an INTEGER and
+            # the node rejects it -- the trigger then never fires and the
+            # rehearsal silently sits ARMED forever
+            "delay_sec": ParameterValue(
+                LaunchConfiguration("delay_sec"), value_type=float),
+            "repeat_sec": ParameterValue(
+                LaunchConfiguration("repeat_sec"), value_type=float),
         }],
     )
 

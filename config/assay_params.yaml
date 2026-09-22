@@ -61,4 +61,4 @@
 
     # --- publishing / debug ------------------------------------------- #
     heartbeat_hz: 10.0
-    show_debug: true
+    show_debug: false

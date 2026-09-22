@@ -37,9 +37,13 @@ Recording (`record_mode`):
     none        no recorder; just the display and the detector.
 
 Arguments
-    experiment_file   single_trigger   experiment name or path (15 s default)
-    fullscreen        false            true for the mosquito-facing projector
-    monitor           ""               "" primary | "N" that display | "span"
+    params_file       config/assay_params.yaml   THIS RIG: screen, circle
+                      centres. Point it at your own copy (see the README,
+                      "Deploying to another rig").
+    experiment_file   single_trigger   experiment name or path (15 s default);
+                      pass "" to use whatever params_file says
+    fullscreen        ""               unset = leave params_file alone
+    monitor           ""               unset = leave params_file alone
     detector_params   config/detector_params.yaml
     image_topic       ""               override the detector's camera topic
     trigger_topic     /arena/mosquito_present   detector output = the trigger
@@ -48,7 +52,7 @@ Arguments
     record_all        true             true -> `-a`; false -> assay + detection only
     bag_dir           <cwd>/mpa_<timestamp>
     max_cache_size    100000000        snapshot-mode buffer, bytes
-    master_seed       -1               -1 -> random (recorded in experiment_info)
+    master_seed       ""               unset = leave params_file alone
 """
 
 import datetime
@@ -69,7 +73,6 @@ from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 _DEFAULT_BAG = os.path.join(
     os.getcwd(), "mpa_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -87,9 +90,15 @@ def generate_launch_description():
         "config", "detector_params.yaml",
     )
 
+    default_assay_params = os.path.join(
+        get_package_share_directory("mosquito_preference_assay"),
+        "config", "assay_params.yaml",
+    )
+
     args = [
+        DeclareLaunchArgument("params_file", default_value=default_assay_params),
         DeclareLaunchArgument("experiment_file", default_value="single_trigger"),
-        DeclareLaunchArgument("fullscreen", default_value="false"),
+        DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),
         DeclareLaunchArgument("detector_params", default_value=default_detector_params),
         DeclareLaunchArgument("image_topic", default_value=""),
@@ -99,7 +108,7 @@ def generate_launch_description():
         DeclareLaunchArgument("record_all", default_value="true"),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),
         DeclareLaunchArgument("max_cache_size", default_value="100000000"),
-        DeclareLaunchArgument("master_seed", default_value="-1"),
+        DeclareLaunchArgument("master_seed", default_value=""),
     ]
 
     bag_dir = LaunchConfiguration("bag_dir")
@@ -108,26 +117,44 @@ def generate_launch_description():
     record_everything = PythonExpression(
         ["'", LaunchConfiguration("record_all"), "'.lower() == 'true'"])
 
-    # The sketch: opens ARMED and draws only the background until triggered.
-    sketch = Node(
-        package="mosquito_preference_assay",
-        executable="stimulus_publisher",
-        name="stimulus_publisher",
-        output="screen",
-        parameters=[{
-            "experiment_file": ParameterValue(
-                LaunchConfiguration("experiment_file"), value_type=str),
+    def _sketch(context, *_args, **_kwargs):
+        """params_file carries the RIG -- which screen, and the circle centres
+        display_check wrote. Overrides are applied only when actually given,
+        so an unset argument leaves that file authoritative instead of
+        silently replacing its value with a launch-file default."""
+        overrides = {
+            # forced: this launch file owns the trigger wiring
             "start_mode": "triggered",
-            "trigger_topic": ParameterValue(
-                LaunchConfiguration("trigger_topic"), value_type=str),
+            "trigger_topic": LaunchConfiguration("trigger_topic").perform(context),
             "trigger_msg_type": "string",
-            "fullscreen": ParameterValue(
-                LaunchConfiguration("fullscreen"), value_type=bool),
-            "monitor": ParameterValue(LaunchConfiguration("monitor"), value_type=str),
-            "master_seed": ParameterValue(
-                LaunchConfiguration("master_seed"), value_type=int),
-        }],
-    )
+        }
+        experiment = LaunchConfiguration("experiment_file").perform(context).strip()
+        if experiment:
+            overrides["experiment_file"] = experiment
+        fullscreen = LaunchConfiguration("fullscreen").perform(context).strip()
+        if fullscreen:
+            overrides["fullscreen"] = fullscreen.lower() in ("1", "true", "yes")
+        monitor = LaunchConfiguration("monitor").perform(context).strip()
+        if monitor:
+            overrides["monitor"] = monitor
+        seed = LaunchConfiguration("master_seed").perform(context).strip()
+        if seed:
+            overrides["master_seed"] = int(seed)
+
+        node = Node(
+            package="mosquito_preference_assay",
+            executable="stimulus_publisher",
+            name="stimulus_publisher",
+            output="screen",
+            parameters=[LaunchConfiguration("params_file"), overrides],
+        )
+        return [node, RegisterEventHandler(OnProcessExit(
+            target_action=node,
+            on_exit=[EmitEvent(event=Shutdown(reason="assay trial finished"))],
+        ))]
+
+    # The sketch: opens ARMED and draws only the background until triggered.
+    sketch = OpaqueFunction(function=_sketch)
 
     def _detector(context, *_args, **_kwargs):
         """Built at launch time so an empty image_topic leaves the params file
@@ -199,14 +226,6 @@ def generate_launch_description():
         actions=[sketch],
     )
 
-    shutdown_when_sketch_exits = RegisterEventHandler(
-        OnProcessExit(
-            target_action=sketch,
-            on_exit=[EmitEvent(event=Shutdown(reason="assay trial finished"))],
-        )
-    )
-
     return LaunchDescription(
-        args + recorders + [snapshot_supervisor, delayed_sketch, detector,
-                            shutdown_when_sketch_exits]
+        args + recorders + [snapshot_supervisor, delayed_sketch, detector]
     )
