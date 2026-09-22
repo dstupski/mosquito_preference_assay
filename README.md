@@ -20,6 +20,7 @@ graphics; ROS 2 Humble for the plumbing.
 [writing an experiment](#writing-an-experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
+[custom params file](#launching-with-your-own-params-file) ·
 [the trigger region](#setting-the-trigger-region-for-a-new-rig) ·
 [triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
 
@@ -275,7 +276,7 @@ place, the trigger firing, the bag closing:
 
 ```bash
 ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    params_file:=~/rig/arena1_assay_params.yaml \
+    params_file:=~/rig/assay_params.yaml \
     experiment_file:=looming_vs_static fullscreen:=true monitor:=2
 ```
 
@@ -283,7 +284,7 @@ ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    params_file:=~/rig/arena1_assay_params.yaml \
+    params_file:=~/rig/assay_params.yaml \
     experiment_file:=looming_vs_static fullscreen:=true monitor:=2 \
     bag_dir:=~/data/looming_vs_static/animal_07
 ```
@@ -587,8 +588,8 @@ a pixel centre describe a room, and must not.
 
 ```
 ~/rig/                                   # keep this in its own small git repo
-  arena1_assay_params.yaml               # copied from config/, then edited
-  arena1_detector_params.yaml
+  assay_params.yaml                      # copied from config/, then edited
+  detector_params.yaml
   20260921_display_config.yaml           # alignments collect here, date-stamped
   calibration/Checkerboard_2025_April_10.npy
               Plumbline_2025_April_10.npy
@@ -596,7 +597,7 @@ a pixel centre describe a room, and must not.
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    params_file:=~/rig/arena1_assay_params.yaml
+    params_file:=~/rig/assay_params.yaml
 ros2 launch mosquito_preference_assay display_check.launch.py \
     fullscreen:=true monitor:=2 out_file:=~/rig
 ```
@@ -612,7 +613,7 @@ Before an animal is anywhere near the rig, check the whole path at once:
 
 ```bash
 ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    params_file:=~/rig/arena1_assay_params.yaml \
+    params_file:=~/rig/assay_params.yaml \
     experiment_file:=ten_stimulus_panel \
     fullscreen:=true monitor:=2
 ```
@@ -680,6 +681,64 @@ clone. Clear the package out as you switch:
 ```bash
 rm -rf build/mosquito_preference_assay install/mosquito_preference_assay
 colcon build --packages-select mosquito_preference_assay --symlink-install
+```
+
+### Launching with your own params file
+
+Every launch file that runs the sketch or the detector takes `params_file:=`.
+Pass it on the command line — don't edit the launch file's default, which is
+tracked and would give you a merge conflict on the next `git pull`:
+
+```bash
+# one animal, the full rig workflow
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    params_file:=~/rig/assay_params.yaml \
+    experiment_file:=jitter_amplitude
+
+# rehearse the same thing with no camera
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    params_file:=~/rig/assay_params.yaml \
+    experiment_file:=jitter_amplitude
+
+# check the display and align the circles
+ros2 launch mosquito_preference_assay display_check.launch.py \
+    params_file:=~/rig/assay_params.yaml out_file:=~/rig
+
+# the plain assay, no trigger
+ros2 launch mosquito_preference_assay assay.launch.py \
+    params_file:=~/rig/assay_params.yaml
+
+# the detector on its own (its own params file, not the assay's)
+ros2 launch mosquito_preference_assay detector.launch.py \
+    params_file:=~/rig/detector_params.yaml
+```
+
+Or with `ros2 run`, which takes the file directly:
+
+```bash
+ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
+    --params-file ~/rig/assay_params.yaml
+```
+
+| Launch file | `params_file:=` |
+|---|---|
+| `assay`, `detector`, `display_check`, `trigger_display_test`, `triggered_assay` | ✅ |
+| `triggered_capture`, `tracking_benchmark` | ❌ — use `ros2 run` with `--params-file`, or the individual arguments |
+
+**Arguments beat the file, but only when you give them.** `fullscreen`,
+`monitor`, `experiment_file`, `master_seed` are all unset-means-leave-alone, so
+this rehearses on the projector without touching your saved config:
+
+```bash
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    params_file:=~/rig/assay_params.yaml fullscreen:=true monitor:=2
+```
+
+**Tired of typing it?** An alias is the right place for it — not the launch
+file:
+
+```bash
+alias mpa-rig='ros2 launch mosquito_preference_assay triggered_assay.launch.py params_file:=~/rig/assay_params.yaml'
 ```
 
 ### `params_file:=` replaces, it does not merge
