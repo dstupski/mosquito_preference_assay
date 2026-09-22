@@ -580,14 +580,25 @@ should this value travel with it?*
 | Belongs to | What | Where |
 |---|---|---|
 | **The science** | `experiments/*.yaml` — stimulus pool, conditions, duration, circle diameter | in the repo, committed, identical everywhere |
-| **The rig** | display / `monitor`, stimulus centres, detector ROI, camera topics, calibration | **outside the repo**, one directory per rig |
+| **The rig** | display / `monitor`, stimulus centres, detector ROI, camera topics, calibration | `config/*.yaml` to start — see below |
 | **The session** | bag paths, `master_seed`, one-off overrides | the command line |
 
 Stimulus definitions travel — they *are* the manipulation. A monitor index and
 a pixel centre describe a room, and must not.
 
+**With one rig, keep it simple: edit `config/assay_params.yaml` in place and
+commit it.** It is the default, so nothing needs a `params_file:=` argument,
+your display settings are version-controlled alongside the code, and they
+arrive on the other computer with a `git clone`. For a single rig and a single
+person committing, that is the right amount of machinery.
+
+**Split it out when a second rig appears.** The moment two machines each want
+their own `monitor` and circle centres, one tracked file cannot hold both —
+they will fight on every `git pull`. That is the signal to move to a per-rig
+file outside the repo, passed with `params_file:=`:
+
 ```
-~/rig/                                   # keep this in its own small git repo
+~/rig/                                   # only once you have more than one rig
   assay_params.yaml                      # copied from config/, then edited
   detector_params.yaml
   20260921_display_config.yaml           # alignments collect here, date-stamped
@@ -685,9 +696,13 @@ colcon build --packages-select mosquito_preference_assay --symlink-install
 
 ### Launching with your own params file
 
+**You only need this once your config lives somewhere other than
+`config/assay_params.yaml`** — that file is every launch file's default, so
+while you are editing it in place, none of the commands below need
+`params_file:=` at all.
+
 Every launch file that runs the sketch or the detector takes `params_file:=`.
-Pass it on the command line — don't edit the launch file's default, which is
-tracked and would give you a merge conflict on the next `git pull`:
+Pass it on the command line rather than editing the launch file's default:
 
 ```bash
 # one animal, the full rig workflow
@@ -757,10 +772,12 @@ rather than writing a short one from scratch.
 
 ### Pulling updates without losing your rig files
 
-**Do not edit `config/*.yaml` in place on a rig.** Those files are tracked, so
-local edits collide with every `git pull` and you end up resolving merge
-conflicts with your calibration inside them. Untracked files pull cleanly;
-modified tracked files do not.
+**Editing `config/*.yaml` in place is fine while you are the only one
+committing** — your changes are just commits like any other, and they follow
+you to the next machine. It stops being fine the moment a second rig edits the
+same tracked file: then every `git pull` is a merge conflict with calibration
+values inside it, and the fix is the per-rig file above. Untracked files pull
+cleanly; modified tracked files do not.
 
 Your `*_display_config.yaml` files are safe from `git pull` — it does not touch
 untracked files. The command that *would* have deleted them is `git clean -fd`,
