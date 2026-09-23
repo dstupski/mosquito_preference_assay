@@ -550,11 +550,30 @@ the animal sees is the scientific variable, and the pixels that achieve it
 depend on this rig's throw distance — so it overrides the experiment's
 diameter rather than living in the experiment file.
 
-**Aligning:** a dashed rectangle marks the **projection surface** — the part
-of the projector's output that actually falls on the surface you care about,
-which is usually not the whole frame. Drag it over the real illuminated area
-(corners resize it), then drag the circles into place inside it. `[` / `]`
-resize the circles, `s` saves, `r` resets to the config, `q` or ESC closes.
+**Aligning.** The two circles are treated as one object — a **midpoint** and a
+**separation** — because that is the rig's real constraint: they sit at the
+same height, equidistant from centre. You cannot accidentally leave them at
+different heights or off-centre, because there is no way to express it.
+
+| | |
+|---|---|
+| drag the **midpoint** | move the pair, staying level and equidistant |
+| drag **either circle** | set the separation (mirrored on the far side) and the shared height |
+| `,` / `.` | closer together / further apart |
+| `[` / `]` | shrink / grow both circles |
+| drag the dashed rect, or a corner | move / resize the projection surface |
+| `s` · `r` · `q` | save · reset to the config · quit |
+
+The dashed rectangle is the **projection surface** — the part of the
+projector's output that actually lands on the surface you care about, which is
+usually not the whole frame. Put it over the real illuminated area, then place
+the circles inside it.
+
+The saved midpoint and half-separation are rounded to whole pixels *before*
+the two centres are derived, so the written values are exactly symmetric.
+Rounding each centre independently leaves them a pixel apart whenever the
+separation is odd — negligible optically, but a built-in left/right asymmetry
+is the one bias a two-choice assay should not ship with.
 
 **Saving** writes a **date-stamped** file, `<YYYYMMDD>_display_config.yaml` —
 an alignment is a measurement of the rig on a particular day, so when the

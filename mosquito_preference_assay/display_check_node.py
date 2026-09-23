@@ -31,7 +31,9 @@ the circles inside it. The two circles can be dragged to line them up with the
 arena, and the positions saved -- so the rig is aligned by eye against the real thing
 rather than by guessing pixel coordinates:
 
-    drag either circle   move it
+    drag the midpoint    move the pair, keeping them level and equidistant
+    drag either circle   set the separation (mirrored) and the shared height
+    , and .              closer together / further apart
     drag inside the rect move the projection surface
     drag a rect corner   resize it
     [ and ]              shrink / grow both circles
@@ -180,17 +182,27 @@ def run_pattern(node):
     import py5
 
     experiment = node.experiment
-    state = {"start": None, "display": None, "left": None, "right": None,
+    # The rig's real constraint: the two circles sit at the same height,
+    # equidistant from a midpoint. Tracking (midpoint, separation) instead of
+    # two independent centres makes that impossible to get wrong by hand --
+    # you cannot accidentally leave them at different heights or off-centre.
+    state = {"start": None, "display": None, "centre": None, "separation": 0.0,
              "surface": None, "grab": None,
              "diameter": float(experiment.circle_diameter_px), "dragging": None,
              "saved": ""}
 
+    def circles():
+        (cx, cy), half = state["centre"], state["separation"] / 2.0
+        return [cx - half, cy], [cx + half, cy]
+
     def reset_geometry():
-        state["left"] = list(assay._resolve_center(
-            "left", experiment, py5.width, py5.height))
-        state["right"] = list(assay._resolve_center(
-            "right", experiment, py5.width, py5.height))
-        state["diameter"] = float(experiment.circle_diameter_px)
+        left = assay._resolve_center("left", experiment, py5.width, py5.height)
+        right = assay._resolve_center("right", experiment, py5.width, py5.height)
+        # collapse whatever the config says into midpoint + separation; if the
+        # two differ in height, the midpoint's height is what both adopt
+        state["centre"] = [(left[0] + right[0]) / 2.0, (left[1] + right[1]) / 2.0]
+        state["separation"] = abs(right[0] - left[0])
+        state["diameter"] = assay.circle_diameter(experiment)
         if node.surface_px:
             state["surface"] = list(node.surface_px)
         else:
@@ -222,8 +234,11 @@ def run_pattern(node):
         _corner_brackets(py5, width, height)
         _surface_rect(py5, state["surface"],
                       held=str(state["dragging"] or "").startswith("surface"))
-        for slot, label in (("left", "LEFT"), ("right", "RIGHT")):
-            _stimulus_outline(py5, state[slot], state["diameter"], label,
+        left, right = circles()
+        _separation_guide(py5, state["centre"], left, right,
+                          held=state["dragging"] == "centre")
+        for centre, label, slot in ((left, "LEFT", "left"), (right, "RIGHT", "right")):
+            _stimulus_outline(py5, centre, state["diameter"], label,
                               held=state["dragging"] == slot)
 
         _readout(py5, node, state, width, height)
@@ -240,10 +255,16 @@ def run_pattern(node):
             if py5.dist(mx, my, cx, cy) <= 22:
                 state["dragging"] = f"surface-corner-{index}"
                 return
+        # the midpoint handle first: it sits between the circles and is the
+        # thing you reach for most
+        cx, cy = state["centre"]
+        if py5.dist(mx, my, cx, cy) <= 26:
+            state["dragging"] = "centre"
+            state["grab"] = (mx - cx, my - cy, 0, 0)
+            return
         radius = state["diameter"] / 2
-        for slot in ("left", "right"):
-            cx, cy = state[slot]
-            if py5.dist(mx, my, cx, cy) <= radius:
+        for slot, centre in (("left", circles()[0]), ("right", circles()[1])):
+            if py5.dist(mx, my, centre[0], centre[1]) <= radius:
                 state["dragging"] = slot
                 return
         if x0 <= mx <= x1 and y0 <= my <= y1:
@@ -258,7 +279,13 @@ def run_pattern(node):
             return
         mx, my = float(py5.mouse_x), float(py5.mouse_y)
         if holding in ("left", "right"):
-            state[holding] = [mx, my]
+            # a circle sets the separation (mirrored on the far side) and the
+            # shared height -- never one circle on its own
+            state["separation"] = max(0.0, 2.0 * abs(mx - state["centre"][0]))
+            state["centre"][1] = my
+        elif holding == "centre":
+            off_x, off_y, _, _ = state["grab"]
+            state["centre"] = [mx - off_x, my - off_y]
         elif holding == "surface-move":
             off_x, off_y, w, h = state["grab"]
             state["surface"] = [mx - off_x, my - off_y, mx - off_x + w, my - off_y + h]
@@ -277,9 +304,12 @@ def run_pattern(node):
 
     def mouse_released():
         holding = state["dragging"]
-        if holding in ("left", "right"):
-            cx, cy = state[holding]
-            node.get_logger().info(f"{holding}_center_px = {cx:.0f},{cy:.0f}")
+        if holding in ("left", "right", "centre"):
+            left, right = circles()
+            node.get_logger().info(
+                f"centre {state['centre'][0]:.0f},{state['centre'][1]:.0f}  "
+                f"separation {state['separation']:.0f} px  ->  "
+                f"left {left[0]:.0f},{left[1]:.0f}  right {right[0]:.0f},{right[1]:.0f}")
         elif holding:
             x0, y0, x1, y1 = state["surface"]
             node.get_logger().info(
@@ -298,6 +328,10 @@ def run_pattern(node):
             state["diameter"] = max(10.0, state["diameter"] - 4)
         elif key == "]":
             state["diameter"] += 4
+        elif key == ",":
+            state["separation"] = max(0.0, state["separation"] - 8)
+        elif key == ".":
+            state["separation"] += 8
         elif key == "s":
             state["saved"] = _save(node, state)
 
@@ -319,15 +353,23 @@ def _save(node, state):
     `out_file` is a dated archive of the same numbers. Alignment is a
     measurement of the rig on a day; when the projector is next knocked the old
     values are wrong but you still want to know what they were."""
-    left, right = state["left"], state["right"]
+    # Round the midpoint and the HALF-separation to whole pixels before
+    # deriving the two centres, so the written values are exactly symmetric.
+    # Rounding the centres independently leaves them a pixel apart whenever
+    # the separation is odd -- a small thing, but a built-in side asymmetry is
+    # the one bias a two-choice assay must not ship with.
+    cx, cy = round(state["centre"][0]), round(state["centre"][1])
+    half = round(state["separation"] / 2.0)
+    left, right = [cx - half, cy], [cx + half, cy]
     x0, y0, x1, y1 = state["surface"]
     text = (
         "# Written by display_check after aligning against the arena by hand.\n"
         "# Paste into config/assay_params.yaml, or pass with --params-file.\n"
         "/**:\n"
         "  ros__parameters:\n"
-        f"    left_center_px: \"{left[0]:.0f},{left[1]:.0f}\"\n"
-        f"    right_center_px: \"{right[0]:.0f},{right[1]:.0f}\"\n"
+        f"    # midpoint {cx},{cy}  separation {2 * half} px\n"
+        f"    left_center_px: \"{left[0]},{left[1]}\"\n"
+        f"    right_center_px: \"{right[0]},{right[1]}\"\n"
         "\n"
         "    # The part of the projector's output that lands on the surface of\n"
         "    # interest. display_check reads this back so the rectangle starts\n"
@@ -415,6 +457,25 @@ def _dashes(start, end, dash):
     return spans
 
 
+def _separation_guide(py5, centre, left, right, held=False):
+    """The midpoint handle and the line joining the pair. Dragging the handle
+    moves both circles; dragging a circle changes the separation, mirrored."""
+    cx, cy = centre
+    py5.stroke(ACCENT)
+    py5.stroke_weight(2 if held else 1)
+    py5.line(left[0], left[1], right[0], right[1])
+    # end ticks, so the separation reads as a measurement
+    for x, _y in (left, right):
+        py5.line(x, cy - 9, x, cy + 9)
+
+    py5.no_stroke()
+    py5.fill(ACCENT)
+    py5.ellipse(cx, cy, 15 if held else 11, 15 if held else 11)
+    py5.text_size(13)
+    py5.text(f"midpoint {cx:.0f}, {cy:.0f}", cx, cy - 26)
+    py5.text(f"separation {right[0] - left[0]:.0f} px", cx, cy + 30)
+
+
 def _stimulus_outline(py5, centre, diameter, label, held=False):
     """Where a stimulus will actually be drawn -- check it against the arena."""
     cx, cy = centre
@@ -453,8 +514,8 @@ def _readout(py5, node, state, width, height):
              width / 2, height * 0.165)
     py5.text(f"frame {py5.frame_count}   {py5.get_frame_rate():.0f} fps",
              width / 2, height * 0.86)
-    py5.text("drag circles / the surface rect  ·  corners resize  ·  "
-             "[ ] size  ·  s save  ·  r reset  ·  q quit",
+    py5.text("drag the midpoint to place the pair  ·  drag a circle for separation  ·  "
+             ", . separation  ·  [ ] size  ·  s save  ·  r reset  ·  q quit",
              width / 2, height * 0.91)
     if state.get("saved"):
         py5.text(state["saved"], width / 2, height * 0.955)
