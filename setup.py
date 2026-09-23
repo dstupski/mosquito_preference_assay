@@ -42,6 +42,9 @@ setup(
             "trajectory_plotter = mosquito_preference_assay.trajectory_plotter_node:main",
             "synthetic_trajectory_publisher = "
             "mosquito_preference_assay.synthetic_trajectory_publisher_node:main",
+            # `preview` is the clear name; `assay` kept so existing
+            # notes and muscle memory keep working.
+            "preview = mosquito_preference_assay.assay:main",
             "assay = mosquito_preference_assay.assay:main",
         ],
     },

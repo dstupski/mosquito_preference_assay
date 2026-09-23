@@ -19,7 +19,7 @@ from mosquito_preference_assay.config_paths import (
     resolve_display_config,
 )
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -27,7 +27,10 @@ from launch_ros.actions import Node
 def _node(context, *_args, **_kwargs):
     calibration = resolve_display_config(
         LaunchConfiguration("display_config").perform(context))
-    return [Node(
+    note = LogInfo(msg=(f"display calibration: {calibration}" if calibration
+                        else "display calibration: none -- using the "
+                             "experiment's own geometry"))
+    return [note, Node(
         package="mosquito_preference_assay",
         executable="stimulus_publisher",
         name="stimulus_publisher",

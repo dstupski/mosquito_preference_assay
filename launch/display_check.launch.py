@@ -35,7 +35,7 @@ from mosquito_preference_assay.config_paths import (
     resolve_display_config,
 )
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -48,6 +48,9 @@ def generate_launch_description():
         authoritative, rather than overwriting it with an empty value."""
         calibration = resolve_display_config(
             LaunchConfiguration("display_config").perform(context))
+        note = LogInfo(msg=(f"display calibration: {calibration}" if calibration
+                            else "display calibration: none -- using the "
+                                 "experiment's own geometry"))
         calibration = [calibration] if calibration else []
 
         overrides = {
@@ -62,7 +65,7 @@ def generate_launch_description():
         if monitor:
             overrides["monitor"] = monitor
 
-        return [Node(
+        return [note, Node(
             package="mosquito_preference_assay",
             executable="display_check",
             name="display_check",

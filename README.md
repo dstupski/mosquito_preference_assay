@@ -82,6 +82,17 @@ sides, every resolved parameter. It's logged at startup and in
 Nodes are grouped by what they are for. Every one is a console script, so
 `ros2 run mosquito_preference_assay <name>`.
 
+Which command do you want? Most people need the first group only:
+
+| If you want to | Run |
+|---|---|
+| see the stimuli, no ROS | `preview` |
+| check the display / align the circles | `display_check` |
+| rehearse a trial, no camera | `trigger_display_test.launch.py` |
+| run an animal | `triggered_assay.launch.py` |
+| tune the detector | `mosquito_detector` + `detector.launch.py` |
+| everything else below | tracking and diagnostics — not needed to run the assay |
+
 **The assay** — the stimulus display and its trial logic
 
 | | |
@@ -119,7 +130,7 @@ Nodes are grouped by what they are for. Every one is a console script, so
 experiments/    two_choice_default · control_vs_grating · single_trigger
                 ten_stimulus_panel · jitter_amplitude
 config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
-launch/         assay · detector · display_check · triggered_capture
+launch/         assay · detector · display_check · trigger_display_test
                 triggered_assay (the rig workflow) · tracking_benchmark
 tools/          list_displays
 test/           unit + lint tests
@@ -216,11 +227,11 @@ ros2 bag record /stimulus_publisher/stimulus_state /stimulus_publisher/trial_sta
 The trial runs for its `duration_sec`, then `phase` becomes `complete` and the
 node exits (Ctrl-C or closing the window also stop it).
 
-**No-ROS preview** (built-in default, just to eyeball the stimuli — publishes
-nothing):
+**No-ROS preview** — draws a trial and nothing else. It publishes nothing and
+records nothing, so it is for eyeballing stimuli, not for running animals:
 
 ```bash
-ros2 run mosquito_preference_assay assay
+ros2 run mosquito_preference_assay preview     # `assay` is the same command
 ```
 
 Keys while running: `d` toggle the debug overlay · `n` draw a fresh trial · `esc` quit.
@@ -775,7 +786,7 @@ ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
 | Launch file | `params_file:=` |
 |---|---|
 | `assay`, `detector`, `display_check`, `trigger_display_test`, `triggered_assay` | ✅ |
-| `triggered_capture`, `tracking_benchmark` | ❌ — use `ros2 run` with `--params-file`, or the individual arguments |
+| `tracking_benchmark` | ❌ — use `ros2 run` with `--params-file`, or the individual arguments |
 
 **Arguments beat the file, but only when you give them.** `fullscreen`,
 `monitor`, `experiment_file`, `master_seed` are all unset-means-leave-alone, so
@@ -880,33 +891,9 @@ ros2 run mosquito_preference_assay test_trigger --ros-args \
 Equivalent one-liner without the node:
 `ros2 topic pub --once /arena/mosquito_present std_msgs/msg/Bool "{data: true}"`.
 
-### Single-run capture
-
-`triggered_capture.launch.py` brings the node up ARMED next to `ros2 bag
-record`. The trigger plays one trial (15 s with `single_trigger`), then the
-node exits, which emits a launch `Shutdown` — SIGINT to the recorder, bag
-finalized. One launch = one animal = one bag. Re-arm for the next = relaunch.
-
-```bash
-ros2 launch mosquito_preference_assay triggered_capture.launch.py
-```
-
-| Launch arg | Default | |
-|---|---|---|
-| `experiment_file` | `single_trigger` | name or path |
-| `trigger_topic` | `""` | override the experiment's `trigger:` topic |
-| `trigger_msg_type` | `""` | override the experiment's `trigger.msg_type` (`bool` \| `string`) |
-| `bag_dir` | `./mpa_<timestamp>` | output dir (must not already exist) |
-| `record_all` | `true` | `true` → `ros2 bag record -a` (captures cameras / trigger too); `false` → assay topics only |
-| `fullscreen` / `monitor` / `master_seed` | | passed to the node |
-
-The node's `exit_grace_sec` (default 2 s) keeps it alive briefly after the
-trial so the trailing `phase: "complete"` messages land in the bag.
-
 ### Detector-armed capture — the rig workflow
 
-`triggered_assay.launch.py` is `triggered_capture` plus the detector, wired
-together: the display comes up **ARMED on the projector before the animal is
+`triggered_assay.launch.py` is the whole rig in one command: the display comes up **ARMED on the projector before the animal is
 introduced**, and the stimuli appear only when a mosquito is found. The point
 is *when* the costs are paid — booting the JVM and opening a fullscreen window
 takes seconds, and that happens at launch, not at detection.
@@ -1139,8 +1126,10 @@ ros2 launch mosquito_preference_assay detector.launch.py &
 #    ...or: ros2 run mosquito_preference_assay mosquito_detector --ros-args -p roi:=340,40,1260,1070 &
 
 # 3. the assay, armed, listening for the detector's events, recording to a bag
-ros2 launch mosquito_preference_assay triggered_capture.launch.py \
-    trigger_topic:=/arena/mosquito_present trigger_msg_type:=string
+#    (triggered_assay.launch.py does steps 2 and 3 together -- see "the rig workflow")
+ros2 launch mosquito_preference_assay assay.launch.py \
+    --ros-args -p start_mode:=triggered \
+    -p trigger_topic:=/arena/mosquito_present -p trigger_msg_type:=string
 ```
 
 ### Two synchronized cameras: `dual_video_publisher`

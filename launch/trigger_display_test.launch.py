@@ -64,6 +64,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     ExecuteProcess,
+    LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
     TimerAction,
@@ -91,6 +92,9 @@ def generate_launch_description():
         the rig's params file authoritative instead of blanking it."""
         calibration = resolve_display_config(
             LaunchConfiguration("display_config").perform(context))
+        note = LogInfo(msg=(f"display calibration: {calibration}" if calibration
+                            else "display calibration: none -- using the "
+                                 "experiment's own geometry"))
         calibration = [calibration] if calibration else []
 
         overrides = {
@@ -119,7 +123,7 @@ def generate_launch_description():
         # sketch exiting is what closes the bag, and it must be that process
         # specifically -- an untargeted handler would also fire if the
         # recorder or the pseudo-trigger stopped first
-        return [node, RegisterEventHandler(OnProcessExit(
+        return [note, node, RegisterEventHandler(OnProcessExit(
             target_action=node,
             on_exit=[EmitEvent(event=Shutdown(reason="display test finished"))],
         ))]

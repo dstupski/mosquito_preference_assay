@@ -216,6 +216,17 @@ class StimulusPublisher(Node):
         self._info_pub.publish(info)
         self.get_logger().info(f"experiment_info: master_seed={master_seed}")
 
+        # Circle geometry can come from three places, layered. Say which one
+        # actually won for each value, so nobody has to reason about
+        # precedence or wonder why the circles moved.
+        centres = ("ROS params (a params or display_config file)"
+                   if (left_center_px or right_center_px)
+                   else f"the experiment file ({experiment.name})")
+        size = (f"{circle_diameter_px:.0f} px from ROS params"
+                if circle_diameter_px
+                else f"{experiment.circle_diameter_px} px from the experiment file")
+        self.get_logger().info(f"geometry: centres from {centres}; diameter {size}")
+
         assay.set_trial_change_callback(self._on_trial_change)
 
         hz = heartbeat_hz if heartbeat_hz and heartbeat_hz > 0 else 10.0

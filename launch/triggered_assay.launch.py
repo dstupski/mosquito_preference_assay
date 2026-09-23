@@ -18,9 +18,9 @@ Order of events:
             duration ───> trial completes ──> node exits ──> Shutdown ──>
                               recorder SIGINTed ──> bag finalized
 
-Because the node still exits when its trial ends, bagging is unchanged from
-triggered_capture.launch.py: `OnProcessExit -> Shutdown` still SIGINTs the
-recorder, so `metadata.yaml` is written and the bag closes cleanly.
+The node exits when its trial ends, and that exit is what closes the bag:
+`OnProcessExit -> Shutdown` SIGINTs the recorder, so `metadata.yaml` is
+written and the bag is readable. One launch = one animal = one bag.
 
 Which display: `monitor:=N` picks one, 1-based. Run
 `python3 tools/list_displays.py --identify` to see which N is the projector.
@@ -67,6 +67,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     ExecuteProcess,
+    LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
     TimerAction,
@@ -121,6 +122,9 @@ def generate_launch_description():
         silently replacing its value with a launch-file default."""
         calibration = resolve_display_config(
             LaunchConfiguration("display_config").perform(context))
+        note = LogInfo(msg=(f"display calibration: {calibration}" if calibration
+                            else "display calibration: none -- using the "
+                                 "experiment's own geometry"))
         calibration = [calibration] if calibration else []
 
         overrides = {
@@ -149,7 +153,7 @@ def generate_launch_description():
             output="screen",
             parameters=[LaunchConfiguration("params_file"), *calibration, overrides],
         )
-        return [node, RegisterEventHandler(OnProcessExit(
+        return [note, node, RegisterEventHandler(OnProcessExit(
             target_action=node,
             on_exit=[EmitEvent(event=Shutdown(reason="assay trial finished"))],
         ))]
