@@ -517,6 +517,28 @@ luck. The pattern shows:
 | live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
 | display index, resolution, position | which screen it *actually* opened on, beside the one requested |
 
+**Aligning, and pointing the experiment at the result.** Press `s` and
+`display_check` writes the geometry twice: `config/display_geometry.local.yaml`
+(gitignored, and what every launch file layers over the params file by
+default) and a dated archive. So the workflow is align → `s` → launch, with
+the circles where you put them, at the size you set:
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    experiment_file:=jitter_amplitude                     # uses the current one
+
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    experiment_file:=jitter_amplitude \
+    display_config:=config/20260923_display_config.yaml   # or a specific one
+```
+
+`display_config:=` takes any file `s` wrote, so keep every dated calibration
+and point at whichever you want. It is layered *after* the params file, so it
+wins. `circle_diameter_px` is in there as a real parameter: the angular size
+the animal sees is the scientific variable, and the pixels that achieve it
+depend on this rig's throw distance — so it overrides the experiment's
+diameter rather than living in the experiment file.
+
 **Aligning:** a dashed rectangle marks the **projection surface** — the part
 of the projector's output that actually falls on the surface you care about,
 which is usually not the whole frame. Drag it over the real illuminated area

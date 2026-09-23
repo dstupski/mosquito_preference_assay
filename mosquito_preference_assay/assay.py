@@ -92,6 +92,11 @@ _cfg = {
     # aligning the window to the arena without editing the experiment file.
     "left_center_px": None,    # [x, y] or None
     "right_center_px": None,   # [x, y] or None
+    # Optional override of the experiment's display.circle_diameter_px. The
+    # scientific variable is the angular size the animal sees; the pixel
+    # diameter that achieves it depends on throw distance and projector, so it
+    # is legitimately a per-rig number. None -> use the experiment's.
+    "circle_diameter_px": None,
 }
 
 _on_trial_change = None       # optional callback(state_dict), called from the sketch thread
@@ -216,6 +221,14 @@ def settings():
         py5.size(_cfg["window_w"], _cfg["window_h"])
 
 
+def circle_diameter(experiment):
+    """The diameter to draw: the rig's override if set, else the experiment's."""
+    override = _cfg.get("circle_diameter_px")
+    if override:
+        return float(override)
+    return float(experiment.circle_diameter_px) if experiment else 200.0
+
+
 def _update_geometry(experiment, w=None, h=None, left_c=None, right_c=None):
     """Record where on screen the trial is being drawn.
 
@@ -239,7 +252,7 @@ def _update_geometry(experiment, w=None, h=None, left_c=None, right_c=None):
             # which display it ACTUALLY landed on, not just what was asked
             # for, so a bag records the physical screen the animal was shown
             "display": _rt.get("display"),
-            "circle_diameter_px": experiment.circle_diameter_px,
+            "circle_diameter_px": circle_diameter(experiment),
             "left_center_px": [left_c[0], left_c[1]],
             "right_center_px": [right_c[0], right_c[1]],
         }
@@ -521,7 +534,7 @@ def _begin_trial():
     trial_rng = random.Random(trial_seed)
 
     plan = experiment.realize(draw, trial_rng)
-    d = experiment.circle_diameter_px
+    d = circle_diameter(experiment)
     left = build_stimulus(plan.left_type, d, plan.left_params, trial_rng)
     right = build_stimulus(plan.right_type, d, plan.right_params, trial_rng)
 
@@ -665,7 +678,7 @@ def _draw_debug_overlay(t, duration, left_c, right_c):
         right_name = _rt["right_name"]
         trial_id = _rt["trial_id"]
         condition_name = _rt["condition_name"]
-    half_d = (experiment.circle_diameter_px if experiment else 200) / 2
+    half_d = circle_diameter(experiment) / 2
     py5.fill(0)
     py5.text_size(16)
     py5.text(left_name, left_c[0], left_c[1] + half_d + 30)

@@ -30,7 +30,10 @@ Arguments
 """
 
 
-from mosquito_preference_assay.config_paths import resolve_config
+from mosquito_preference_assay.config_paths import (
+    resolve_config,
+    resolve_display_config,
+)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -43,6 +46,10 @@ def generate_launch_description():
     def _node(context, *_args, **_kwargs):
         """Built at launch time so an unset override leaves the params file
         authoritative, rather than overwriting it with an empty value."""
+        calibration = resolve_display_config(
+            LaunchConfiguration("display_config").perform(context))
+        calibration = [calibration] if calibration else []
+
         overrides = {
             "duration_sec": float(
                 LaunchConfiguration("duration_sec").perform(context) or 0.0),
@@ -60,11 +67,12 @@ def generate_launch_description():
             executable="display_check",
             name="display_check",
             output="screen",
-            parameters=[LaunchConfiguration("params_file"), overrides],
+            parameters=[LaunchConfiguration("params_file"), *calibration, overrides],
         )]
 
     return LaunchDescription([
         DeclareLaunchArgument("params_file", default_value=default_params),
+        DeclareLaunchArgument("display_config", default_value=""),
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),
         DeclareLaunchArgument("duration_sec", default_value="0.0"),

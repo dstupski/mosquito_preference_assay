@@ -58,7 +58,10 @@ Arguments
 import datetime
 import os
 
-from mosquito_preference_assay.config_paths import resolve_config
+from mosquito_preference_assay.config_paths import (
+    resolve_config,
+    resolve_display_config,
+)
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -90,6 +93,7 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("params_file", default_value=default_assay_params),
+        DeclareLaunchArgument("display_config", default_value=""),
         DeclareLaunchArgument("experiment_file", default_value="single_trigger"),
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),
@@ -115,6 +119,10 @@ def generate_launch_description():
         display_check wrote. Overrides are applied only when actually given,
         so an unset argument leaves that file authoritative instead of
         silently replacing its value with a launch-file default."""
+        calibration = resolve_display_config(
+            LaunchConfiguration("display_config").perform(context))
+        calibration = [calibration] if calibration else []
+
         overrides = {
             # forced: this launch file owns the trigger wiring
             "start_mode": "triggered",
@@ -139,7 +147,7 @@ def generate_launch_description():
             executable="stimulus_publisher",
             name="stimulus_publisher",
             output="screen",
-            parameters=[LaunchConfiguration("params_file"), overrides],
+            parameters=[LaunchConfiguration("params_file"), *calibration, overrides],
         )
         return [node, RegisterEventHandler(OnProcessExit(
             target_action=node,

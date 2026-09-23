@@ -54,7 +54,10 @@ params file drives both):
     duration_sec      double  0.0      0 = stay up until closed
     surface_px        string  ""       "x0,y0,x1,y1" starting rectangle;
                                        "" = a centred box inset from the screen
-    out_file          string  ""       where `s` saves to:
+    live_file         string  ""       the file the ASSAY reads back; "" =
+                                       config/display_geometry.local.yaml,
+                                       "none" to not write it
+    out_file          string  ""       dated archive `s` also writes:
                                          ""          -> ./<YYYYMMDD>_display_config.yaml
                                          a directory -> <dir>/<YYYYMMDD>_display_config.yaml
                                          a .yaml path -> exactly that
@@ -90,6 +93,23 @@ def _resolve_out_file(spec):
     if path.is_dir() or spec.endswith("/"):
         return str(path / name)
     return str(path)
+
+
+def _resolve_live_file(spec):
+    """The file the assay reads back. Defaults to the package's
+    config/display_geometry.local.yaml -- gitignored, and layered over the
+    params file by every launch file. "" or "none" disables writing it."""
+    spec = (spec or "").strip()
+    if spec.lower() == "none":
+        return ""
+    if spec:
+        return str(Path(spec).expanduser())
+    try:
+        from .config_paths import resolve_config
+        shipped = resolve_config("assay_params.yaml")
+        return str(Path(shipped).resolve().parent / "display_geometry.local.yaml")
+    except Exception:                                   # noqa: BLE001
+        return "display_geometry.local.yaml"
 
 
 def _rect_param(node, name):
@@ -128,6 +148,8 @@ class DisplayCheck(Node):
         self.out_file = _resolve_out_file(
             str(self.declare_parameter("out_file", "").value))
         self.surface_px = _rect_param(self, "surface_px")
+        self.live_file = _resolve_live_file(
+            str(self.declare_parameter("live_file", "").value))
         window_pos = _center_param(self, "window_pos")
         left_center = _center_param(self, "left_center_px")
         right_center = _center_param(self, "right_center_px")
@@ -287,8 +309,16 @@ def run_pattern(node):
 
 
 def _save(node, state):
-    """Write the dragged geometry as a params snippet that can be pasted into
-    assay_params.yaml, or passed straight back as its own params file."""
+    """Write the dragged geometry twice.
+
+    `live_file` is the one the assay actually reads -- every launch file layers
+    it over the params file, so pressing `s` is the whole workflow: align, save,
+    launch, and the circles are where you put them at the size you set. It is
+    gitignored, so a pull cannot move your arena.
+
+    `out_file` is a dated archive of the same numbers. Alignment is a
+    measurement of the rig on a day; when the projector is next knocked the old
+    values are wrong but you still want to know what they were."""
     left, right = state["left"], state["right"]
     x0, y0, x1, y1 = state["surface"]
     text = (
@@ -306,19 +336,28 @@ def _save(node, state):
         "    # you to keep them inside this rectangle.\n"
         f"    surface_px: \"{x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f}\"\n"
         "\n"
-        "# circle_diameter_px is experiment geometry, so it belongs in the\n"
-        "# experiment file's display: block, not here:\n"
-        f"#   display:\n"
-        f"#     circle_diameter_px: {state['diameter']:.0f}\n"
+        "    # Overrides the experiment file's display.circle_diameter_px.\n"
+        "    # The angular size the animal sees is the scientific variable;\n"
+        "    # the pixels that achieve it depend on this rig's throw distance,\n"
+        "    # which is why it belongs here and not in the experiment.\n"
+        f"    circle_diameter_px: {state['diameter']:.1f}\n"
     )
-    try:
-        with open(node.out_file, "w") as handle:
-            handle.write(text)
-    except OSError as exc:
-        node.get_logger().error(f"could not write {node.out_file}: {exc}")
-        return f"could not write {node.out_file}"
-    node.get_logger().info(f"saved to {node.out_file}:\n{text}")
-    return f"saved to {Path(node.out_file).name}"
+    written = []
+    for path in (node.live_file, node.out_file):
+        if not path:
+            continue
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w") as handle:
+                handle.write(text)
+            written.append(path)
+        except OSError as exc:
+            node.get_logger().error(f"could not write {path}: {exc}")
+    if not written:
+        return "could not write anything"
+    node.get_logger().info(
+        "saved:\n  " + "\n  ".join(written) + f"\n\n{text}")
+    return "saved - the assay will use this on its next launch"
 
 
 def _corner_brackets(py5, width, height):

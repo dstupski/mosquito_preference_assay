@@ -55,7 +55,10 @@ Arguments
 import datetime
 import os
 
-from mosquito_preference_assay.config_paths import resolve_config
+from mosquito_preference_assay.config_paths import (
+    resolve_config,
+    resolve_display_config,
+)
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -86,6 +89,10 @@ def generate_launch_description():
     def _sketch(context, *_args, **_kwargs):
         """Overrides are applied only when given, so an unset argument leaves
         the rig's params file authoritative instead of blanking it."""
+        calibration = resolve_display_config(
+            LaunchConfiguration("display_config").perform(context))
+        calibration = [calibration] if calibration else []
+
         overrides = {
             "start_mode": "triggered",
             "trigger_topic": TRIGGER_TOPIC,
@@ -106,7 +113,7 @@ def generate_launch_description():
             executable="stimulus_publisher",
             name="stimulus_publisher",
             output="screen",
-            parameters=[LaunchConfiguration("params_file"), overrides],
+            parameters=[LaunchConfiguration("params_file"), *calibration, overrides],
         )
         # registered here, where there is a concrete action to target: the
         # sketch exiting is what closes the bag, and it must be that process
@@ -152,6 +159,7 @@ def generate_launch_description():
     # and the trigger must not fire before the sketch is armed
     return LaunchDescription([
         DeclareLaunchArgument("params_file", default_value=default_params),
+        DeclareLaunchArgument("display_config", default_value=""),
         DeclareLaunchArgument("experiment_file", default_value=""),
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),

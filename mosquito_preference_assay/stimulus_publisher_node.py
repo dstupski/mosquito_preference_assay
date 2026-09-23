@@ -40,6 +40,9 @@ the `experiment_file` parameter. The rest of the parameters are operational:
     window_w / window_h int  1200/800  ignored when fullscreen
     left_center_px      string  ""    "x,y" px override of display.left_center_px
     right_center_px     string  ""    "x,y" px override of display.right_center_px
+    circle_diameter_px  double  0.0   >0 overrides the experiment's diameter (per-rig:
+                                      the same angular size needs different pixels on
+                                      a different throw distance)
     heartbeat_hz        double  10.0   stimulus_state re-publish rate
     show_debug          bool    False  on-screen labels/timer overlay. OFF: it draws
                                       text on the MOSQUITO-FACING display. `d` toggles it
@@ -134,6 +137,9 @@ class StimulusPublisher(Node):
         show_debug = self.declare_parameter("show_debug", False).value
         left_center_px = _center_param(self, "left_center_px")
         right_center_px = _center_param(self, "right_center_px")
+        # 0 / negative -> use the experiment's diameter
+        diameter = float(self.declare_parameter("circle_diameter_px", 0.0).value)
+        circle_diameter_px = diameter if diameter > 0 else None
         window_pos = _center_param(self, "window_pos")
         start_mode = str(self.declare_parameter("start_mode", "").value).strip()
         trigger_topic = str(self.declare_parameter("trigger_topic", "").value).strip()
@@ -187,6 +193,7 @@ class StimulusPublisher(Node):
             window_h=int(window_h),
             left_center_px=left_center_px,
             right_center_px=right_center_px,
+            circle_diameter_px=circle_diameter_px,
             show_debug=bool(show_debug),
             start_mode=start_mode,
         )

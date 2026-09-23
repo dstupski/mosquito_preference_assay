@@ -29,6 +29,51 @@ def local_variant(path):
     return f"{base}.local{ext}"
 
 
+DEFAULT_DISPLAY_CONFIG = "display_geometry.local.yaml"
+
+
+def _config_dir():
+    try:
+        shipped = os.path.join(
+            get_package_share_directory(PACKAGE), "config", "assay_params.yaml")
+    except PackageNotFoundError:
+        return None
+    return os.path.dirname(os.path.realpath(shipped))
+
+
+def resolve_display_config(spec=""):
+    """The calibration file to layer over the params file, or None.
+
+    `spec` is the `display_config` launch argument: a path to a specific
+    calibration, so you can keep every dated file display_check writes and
+    point at whichever one you want --
+
+        display_config:=config/20260923_display_config.yaml
+
+    Empty falls back to config/display_geometry.local.yaml, the file `s`
+    keeps current, and None when that does not exist either (a fresh clone),
+    in which case the experiment's own geometry applies.
+
+    Launch files layer it AFTER the params file, so it wins: with multiple
+    params files, later ones override earlier ones.
+    """
+    spec = (spec or "").strip()
+    if spec:
+        path = os.path.expanduser(spec)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"display_config {spec!r} not found. Point it at a file "
+                f"display_check wrote, or leave it empty to use the current "
+                f"{DEFAULT_DISPLAY_CONFIG}.")
+        return os.path.abspath(path)
+
+    directory = _config_dir()
+    if not directory:
+        return None
+    path = os.path.join(directory, DEFAULT_DISPLAY_CONFIG)
+    return path if os.path.exists(path) else None
+
+
 def resolve_config(name):
     """Absolute path to the params file a launch file should default to:
     the `.local.yaml` next to it if that exists, otherwise the shipped one.
