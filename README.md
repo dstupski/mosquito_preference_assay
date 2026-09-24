@@ -21,6 +21,7 @@ graphics; ROS 2 Humble for the plumbing.
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
 [custom params file](#launching-with-your-own-params-file) ·
+[where does this setting go?](#where-does-this-setting-go) ·
 [the trigger region](#setting-the-trigger-region-for-a-new-rig) ·
 [triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
 
@@ -859,6 +860,68 @@ includes ignored files.
 
 Keeping the rig directory outside the repo avoids all of this, which is the
 real reason to do it.
+
+---
+
+## Where does this setting go?
+
+Five files, each answering a different question. When you are not sure which
+one a setting belongs in, ask **what would have to change for this value to be
+wrong** — a different question, a different room, or a different afternoon.
+
+| File | Holds | Changes when |
+|---|---|---|
+| `experiments/<name>.yaml` | the **science**: stimuli, how the pair is drawn, trial length | you ask a different question |
+| `config/assay_params.yaml` | the **display node**: which screen, window, trigger wiring | you move to a different rig |
+| `config/detector_params.yaml` | the **detector**: camera topic, trigger region, debounce | the camera or arena framing moves |
+| `config/tracking_params.yaml` | the **3D pipeline**: per-camera ROIs, sync, calibration paths | the cameras or calibration change |
+| `config/display_geometry.local.yaml` | the **calibration**: circle centres and diameter — written by `display_check`, not edited by hand | you realign the projector |
+
+Copy any `config/*.yaml` to `config/*.local.yaml` and edit that: the `.local`
+copy is gitignored and wins automatically, so a `git pull` can never move your
+rig mid-session.
+
+### The settings people hunt for
+
+| Setting | Lives in | |
+|---|---|---|
+| **trial length** | `experiments/<name>.yaml` | `duration_sec` |
+| **which stimuli, how paired** | `experiments/<name>.yaml` | `stimuli:` / `conditions:` |
+| circle **size** and **position** | `config/display_geometry.local.yaml` | written by `display_check`; overrides the experiment's `display:` block |
+| which **screen** / projector | `config/assay_params.yaml` | `fullscreen`, `monitor` |
+| **trigger region** in the frame | `config/detector_params.yaml` | `roi` — ships as `""`, meaning the whole frame |
+| which **camera** fires the trigger | `config/detector_params.yaml` | `image_topic` |
+| **how many frames** before a detection counts | `config/detector_params.yaml` | `consecutive_frames` (3) |
+| **minimum gap between triggers** | `config/detector_params.yaml` | `cooldown_sec` (10) |
+| blob size / sensitivity | `config/detector_params.yaml` | `diff_threshold`, `min_area_px`, `max_area_px` |
+| per-camera **tracking ROIs** | `config/tracking_params.yaml` | `tracker_a` / `tracker_b` → `roi` |
+| **calibration** `.npy` paths | `config/tracking_params.yaml` | `triangulator` → `checkerboard_file`, `plumbline_file` |
+| stereo **pairing tolerance** | `config/tracking_params.yaml` | `stereo_sync` → `sync_slop_sec` |
+| 3D **quality gate** | `config/tracking_params.yaml` | `triangulator` → `max_reprojection_error_px` |
+
+### Delays — there are four, and they are unrelated
+
+This is the one that catches people, because they sound alike:
+
+| Delay | Where | What it actually is |
+|---|---|---|
+| `detector_delay` | **launch argument** (`triggered_assay`) | seconds before the *detector starts*, so it cannot fire at a sketch that is not armed yet. Not a property of detection |
+| `delay_sec` | **launch argument** (`trigger_display_test`) | how long the rehearsal sits ARMED before firing its own fake trigger. Rehearsal only |
+| `consecutive_frames` | `config/detector_params.yaml` | frames in a row a blob must be seen before it counts as a detection — the real debounce |
+| `cooldown_sec` | `config/detector_params.yaml` | minimum gap between one trigger and the next |
+| `exit_grace_sec` | `config/assay_params.yaml` | seconds the node stays alive after the trial so trailing messages reach the bag |
+
+None of them is the lag between the trigger and the stimuli appearing. That is
+not configurable — it is processing time, measured at **~2 ms** from trigger
+message to stimuli drawn, or **~14 ms** end to end from the detector first
+seeing the animal.
+
+### Things that belong on the command line, not in a file
+
+Per-run choices: `bag_dir`, `experiment_file`, `master_seed`, and one-off
+overrides like `fullscreen:=true monitor:=2`. Every launch argument is
+unset-means-leave-the-file-alone, so overriding for one run never disturbs a
+saved config.
 
 ---
 
