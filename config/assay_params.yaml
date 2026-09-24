@@ -55,6 +55,13 @@
     left_center_px: ""
     right_center_px: ""
 
+    # >0 overrides the experiment's display.circle_diameter_px. The angular
+    # size the animal sees is the scientific variable; the pixels that achieve
+    # it depend on this rig's throw distance, which is why it can live here.
+    # Normally you do not set it by hand -- display_check writes it into
+    # config/display_geometry.local.yaml when you press `s`.
+    circle_diameter_px: 0.0
+
     # --- triggering ---------------------------------------------------- #
     # "" -> derive from the experiment file: a `trigger:` block means open
     # ARMED and wait; no block means play immediately. Force with

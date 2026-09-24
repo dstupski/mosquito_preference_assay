@@ -14,7 +14,8 @@ graphics; ROS 2 Humble for the plumbing.
 
 ## Contents
 
-**Start here** — [how it works](#how-it-works) · [setup](#setup) · [quick start](#quick-start)
+**Start here** — [how it works](#how-it-works) · [install](#setup) ·
+[**setting up a rig, start to finish**](#setting-up-a-rig-start-to-finish)
 
 **Running the assay** — [setting up a new experiment](#setting-up-a-new-experiment-step-by-step) ·
 [writing an experiment](#writing-an-experiment) ·
@@ -175,7 +176,7 @@ ros2 run mosquito_preference_assay assay
 ```
 
 If step 6 shows two circles and prints `[assay] trial 0: ...`, you're set —
-go to [Quick start](#quick-start). If `import py5` fails, see **`JAVA_HOME`**
+go to [setting up a rig](#setting-up-a-rig-start-to-finish). If `import py5` fails, see **`JAVA_HOME`**
 below.
 
 ### Dependency reference
@@ -211,31 +212,124 @@ you deploy to several rigs.
 
 ---
 
-## Quick start
+## Setting up a rig, start to finish
+
+Six steps from a fresh clone to running an animal. Each one leaves something
+you can check, so you find problems at the step that caused them.
+
+**1. Build, once, so your edits take effect without rebuilding.**
 
 ```bash
-# play immediately, built-in default experiment (random draw of 2 markers / trial)
-ros2 launch mosquito_preference_assay assay.launch.py
-
-# a specific experiment, fullscreen on projector 2
-ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
-    -p experiment_file:=control_vs_grating -p fullscreen:=true -p monitor:=2
-
-# record alongside your other topics
-ros2 bag record /stimulus_publisher/stimulus_state /stimulus_publisher/trial_start
+cd ~/ros2_ws
+colcon build --packages-select mosquito_preference_assay --symlink-install
+source install/setup.bash          # add to ~/.bashrc to make it stick
 ```
 
-The trial runs for its `duration_sec`, then `phase` becomes `complete` and the
-node exits (Ctrl-C or closing the window also stop it).
+**2. Make your own config.** `config/assay_params.yaml` is tracked boilerplate
+that `git pull` can change. Copy it — a `.local.yaml` is gitignored and is
+preferred automatically, so nothing else needs to change:
 
-**No-ROS preview** — draws a trial and nothing else. It publishes nothing and
-records nothing, so it is for eyeballing stimuli, not for running animals:
+```bash
+cd src/mosquito_preference_assay
+cp config/assay_params.yaml config/assay_params.local.yaml
+```
+
+Copy the **whole** file, not a few lines: a params file *replaces* rather than
+merges, so anything missing falls back to a built-in default.
+
+**3. Find your projector's number.** It is the Java screen order, which matches
+neither `xrandr` nor Ubuntu's Settings:
+
+```bash
+python3 tools/list_displays.py                 # lists them
+python3 tools/list_displays.py --identify      # flashes the number on each
+```
+
+Put the answer in `config/assay_params.local.yaml`:
+
+```yaml
+fullscreen: true
+monitor: "2"        # a string
+```
+
+*Check:* re-run `list_displays.py` and confirm the number matches the screen
+you mean.
+
+**4. Align the circles to the arena.**
+
+```bash
+ros2 launch mosquito_preference_assay display_check.launch.py
+```
+
+Drag the **midpoint** to place the pair, drag a circle to set the separation,
+`[`/`]` to resize, then **`s`** to save.
+
+**That is the whole handoff — there is nothing to copy or configure.** `s`
+writes `config/display_geometry.local.yaml`, and every launch layers it over
+the params file, so the next experiment comes up with your circles at your
+size. Each launch prints where it got them:
+
+```
+display calibration: .../config/display_geometry.local.yaml
+```
+
+`s` also writes a dated archive, so `display_config:=config/20260923_display_config.yaml`
+goes back to an earlier alignment.
+
+*Check:* the four corner brackets are all visible. A missing one means the
+projector is overscanning, and every position you just set is shifted.
+
+**5. Rehearse a whole trial — no camera, no animal.**
+
+```bash
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    experiment_file:=jitter_amplitude
+```
+
+It comes up ARMED, fires its own trigger after a few seconds, runs the trial,
+and closes the bag exactly as a real run would.
+
+*Check:* the circles are where you put them, and the bag is complete:
+
+```bash
+ros2 bag info display_test_*        # metadata.yaml present = it closed cleanly
+```
+
+**6. Run an animal.**
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    experiment_file:=jitter_amplitude \
+    bag_dir:=~/data/jitter_amplitude/animal_01
+```
+
+One launch = one animal = one bag. Before the first real animal, set the
+detector's trigger region — see
+[setting the trigger region](#setting-the-trigger-region-for-a-new-rig),
+because it ships as the whole frame and will fire on reflections.
+
+### Running a different setup
+
+The file named `config/assay_params.local.yaml` is always the one used. To keep
+several and switch between them, name them and pass the one you want:
+
+```bash
+ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+    params_file:=config/rig_b.local.yaml experiment_file:=jitter_amplitude
+```
+
+Anything matching `config/*.local.yaml` is gitignored, so named setups never
+end up in a commit.
+
+### Just looking at stimuli
+
+No ROS, no recording — draws a trial and nothing else:
 
 ```bash
 ros2 run mosquito_preference_assay preview     # `assay` is the same command
 ```
 
-Keys while running: `d` toggle the debug overlay · `n` draw a fresh trial · `esc` quit.
+Keys: `d` debug overlay · `n` a fresh trial · `esc` quit.
 
 ---
 
