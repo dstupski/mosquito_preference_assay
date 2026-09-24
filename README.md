@@ -1454,6 +1454,42 @@ means anything if whatever stamped the frames shares this machine's clock
 measuring clock offset). And leave `watch_images` off unless you need input
 accounting — receiving every full frame is real bandwidth.
 
+### Where the tracking configuration lives
+
+`config/tracking_params.yaml` — the same boilerplate-plus-`.local` pattern as
+the assay:
+
+```bash
+cp config/tracking_params.yaml config/tracking_params.local.yaml
+# edit the .local one: ROIs, and the calibration paths
+```
+
+It is keyed **per node**, not with the `/**` wildcard, because `tracker_a` and
+`tracker_b` are two instances of the same executable that must *not* share
+settings — each has its own camera and its own ROI.
+
+| Node | What lives there |
+|---|---|
+| `tracker_a` / `tracker_b` | camera topic, output topic, `frame_id`, **ROI**, `image_qos`, detection tuning |
+| `stereo_sync` | the two input topics, `sync_slop_sec`, queue size |
+| `triangulator` | **`checkerboard_file` / `plumbline_file`**, output topic, `max_reprojection_error_px` |
+| `pipeline_monitor` | reporting interval, `watch_images` |
+
+Setting the calibration paths there means you stop passing them on every
+command. Launch arguments still override for a one-off, and an unset argument
+leaves the file alone:
+
+```bash
+ros2 launch mosquito_preference_assay tracking_benchmark.launch.py \
+    session:=/path/to/session rate_hz:=200.0        # everything from the config
+
+ros2 launch mosquito_preference_assay tracking_benchmark.launch.py \
+    session:=/path/to/session image_qos:=sensor_data roi_a:=400,100,1200,1000
+```
+
+With no calibration set anywhere it says so and runs tracking only, with
+stereo pairs as the final stage, rather than failing obscurely.
+
 ### One command for the whole thing
 
 ```bash

@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+# THIS FILE IS THE BOILERPLATE. It is tracked, so `git pull` can change it.
+#
+# For your own rig, copy it once and edit the copy:
+#
+#     cp config/tracking_params.yaml config/tracking_params.local.yaml
+#
+# A *.local.yaml is gitignored and takes precedence automatically, so a pull
+# can never move your ROIs or unset your calibration mid-session.
+# ---------------------------------------------------------------------------
+#
+# The camera-in, 3D-position-out pipeline:
+#
+#     tracker_a  ─┐
+#     tracker_b  ─┴─> stereo_sync ─> triangulator ─> /tracking/position_3d
+#
+# Keyed per NODE, not with the /** wildcard, because tracker_a and tracker_b
+# are two instances of the same executable that must NOT share settings --
+# each has its own camera and its own ROI.
+
+# --- camera A ------------------------------------------------------------- #
+tracker_a:
+  ros__parameters:
+    image_topic: "/cam_a/image_raw"
+    topic: "/tracking/cam_a/position"
+    frame_id: "cam_a"
+
+    # "x0,y0,x1,y1" px. RIG-SPECIFIC: it excludes the equipment stand and its
+    # indicator lights, which otherwise capture the largest-blob heuristic.
+    # Re-derive after any camera move -- see the README, "Setting the trigger
+    # region for a new rig"; the same method applies here.
+    roi: "340,40,1260,1070"
+
+    # reliable  = process every frame; lag grows under load (queue depth x
+    #             frame interval), so ~56 ms at 200 fps
+    # sensor_data = always take the newest frame, ~7 ms, drops frames when
+    #             saturated. Use it for closed-loop work, reliable to record.
+    image_qos: "reliable"
+
+    diff_threshold: 25
+    min_area_px: 4.0
+    max_area_px: 5000.0
+    morph_kernel: 3
+
+    publish_debug_image: false   # costs a colour conversion + encode per frame
+    log_every_n: 0
+
+# --- camera B ------------------------------------------------------------- #
+tracker_b:
+  ros__parameters:
+    image_topic: "/cam_b/image_raw"
+    topic: "/tracking/cam_b/position"
+    frame_id: "cam_b"
+    roi: "350,20,1370,1070"      # B sees the arena from a different angle
+    image_qos: "reliable"
+    diff_threshold: 25
+    min_area_px: 4.0
+    max_area_px: 5000.0
+    morph_kernel: 3
+    publish_debug_image: false
+    log_every_n: 0
+
+# --- pairing the two 2D streams ------------------------------------------- #
+stereo_sync:
+  ros__parameters:
+    topic_a: "/tracking/cam_a/position"
+    topic_b: "/tracking/cam_b/position"
+    topic: "/tracking/stereo_track"
+
+    # Max stamp difference counted as one instant. 0.05 s is loose, and right
+    # for replayed footage. If the real cameras are HARDWARE-TRIGGERED
+    # together this should come down by orders of magnitude -- at 200 fps a
+    # 50 ms window spans ten frames, so it could pair the wrong ones.
+    sync_slop_sec: 0.05
+    queue_size: 100
+    log_every_n: 0
+
+# --- 2D pair -> a 3D position in mm --------------------------------------- #
+triangulator:
+  ros__parameters:
+    topic: "/tracking/stereo_track"
+    output_topic: "/tracking/position_3d"
+    frame_id: "arena"
+
+    # THE RIG'S CALIBRATION. Absolute paths: these are rig-specific data and
+    # deliberately not shipped with the package. cam_a must be the camera the
+    # calibration calls cam0 -- getting it backwards still triangulates, just
+    # badly (0.25 px median reprojection error the right way round, 2.34 px
+    # swapped). Set them and stop passing them on the command line.
+    checkerboard_file: ""
+    plumbline_file: ""
+
+    # Drop triangulations worse than this, in px. 0 keeps everything.
+    # Reprojection error is the per-frame quality signal: it cleanly separates
+    # good frames from frames where the two cameras locked onto DIFFERENT
+    # objects, which is what happens with two mosquitoes in the arena.
+    max_reprojection_error_px: 3.0
+
+    log_every_n: 0
+
+# --- live per-stage lag / rate / yield ------------------------------------ #
+pipeline_monitor:
+  ros__parameters:
+    report_period_sec: 5.0
+    # Off: watching the image topics means receiving every full frame
+    # (622 MB/s at 200 fps x2), which perturbs what you are measuring.
+    watch_images: false
+    publish_report: true

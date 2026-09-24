@@ -19,25 +19,25 @@ Arguments (defaults in parentheses):
     source_a / source_b      ""        override the two frame sources directly
     rate_hz                  200.0     playback rate to drive the pipeline at
     loop                     False     replay continuously
-    roi_a / roi_b            the tuned arena ROIs
-    image_qos                reliable  reliable = process every frame (lag grows
-                                       under load) | sensor_data = always take the
-                                       newest frame (drops frames, stays fresh)
-    max_reprojection_error_px  0.0     drop triangulations above this (0 = keep all)
-    report_period_sec         5.0      monitor reporting interval
-    watch_images              False    also measure image-topic rates (costs
-                                       full-frame bandwidth -- can skew results)
+    params_file   config/tracking_params.yaml (or your .local copy) -- ROIs,
+                  topics, detection tuning, sync slop, and the CALIBRATION
+                  PATHS. Set them there once instead of passing them every run.
+    roi_a / roi_b            "" = leave params_file alone
+    image_qos                "" = leave params_file alone. reliable = process
+                                  every frame (lag grows under load) |
+                                  sensor_data = newest frame, drops when saturated
+    max_reprojection_error_px  "" = leave params_file alone
+    report_period_sec         "" = leave params_file alone
+    watch_images              "" = leave params_file alone
     plot                      False    also open the live 3D trajectory plot
 """
 
+from mosquito_preference_assay.config_paths import resolve_config
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
-
-DEFAULT_ROI_A = "340,40,1260,1070"
-DEFAULT_ROI_B = "350,20,1370,1070"
 
 
 def _source(camera):
@@ -50,70 +50,102 @@ def _source(camera):
     ])
 
 
-def generate_launch_description():
-    have_calibration = PythonExpression([
-        "'", LaunchConfiguration("checkerboard_file"), "' != '' and '",
-        LaunchConfiguration("plumbline_file"), "' != ''",
-    ])
+def _nodes(context, *_args, **_kwargs):
+    """Built at launch time so an unset argument leaves the params file
+    authoritative. Everything here has a default in config/tracking_params.yaml
+    (or your .local copy); the arguments are for one-off overrides."""
+    params = LaunchConfiguration("params_file").perform(context)
+
+    def given(name, cast=str):
+        raw = LaunchConfiguration(name).perform(context).strip()
+        return cast(raw) if raw else None
 
     def tracker(letter, roi_argument):
+        overrides = {}
+        roi = given(roi_argument)
+        if roi:
+            overrides["roi"] = roi
+        qos = given("image_qos")
+        if qos:
+            overrides["image_qos"] = qos
         return Node(
             package="mosquito_preference_assay", executable="tracker",
             name=f"tracker_{letter}", output="screen",
-            parameters=[{
-                "image_topic": f"/cam_{letter}/image_raw",
-                "topic": f"/tracking/cam_{letter}/position",
-                "frame_id": f"cam_{letter}",
-                "roi": LaunchConfiguration(roi_argument),
-                "image_qos": LaunchConfiguration("image_qos"),
-                "log_every_n": 0,
-            }],
+            parameters=[params, overrides],
         )
 
+    calibration = {}
+    for name in ("checkerboard_file", "plumbline_file"):
+        value = given(name)
+        if value:
+            calibration[name] = value
+    error_px = given("max_reprojection_error_px", float)
+    if error_px is not None:
+        calibration["max_reprojection_error_px"] = error_px
+
+    monitor = {}
+    period = given("report_period_sec", float)
+    if period is not None:
+        monitor["report_period_sec"] = period
+    watch = LaunchConfiguration("watch_images").perform(context).strip()
+    if watch:
+        monitor["watch_images"] = watch.lower() in ("1", "true", "yes")
+
+    # the triangulator needs a calibration: from the params file, or given here
+    import yaml
+    from_file = {}
+    try:
+        with open(params) as handle:
+            from_file = (yaml.safe_load(handle) or {}).get(
+                "triangulator", {}).get("ros__parameters", {})
+    except OSError:
+        pass
+    have_calibration = bool(
+        (calibration.get("checkerboard_file") or from_file.get("checkerboard_file"))
+        and (calibration.get("plumbline_file") or from_file.get("plumbline_file")))
+
+    nodes = [
+        tracker("a", "roi_a"),
+        tracker("b", "roi_b"),
+        Node(package="mosquito_preference_assay", executable="stereo_sync",
+             name="stereo_sync", output="screen", parameters=[params]),
+        Node(package="mosquito_preference_assay", executable="pipeline_monitor",
+             name="pipeline_monitor", output="screen", parameters=[params, monitor]),
+    ]
+    if have_calibration:
+        nodes.append(Node(
+            package="mosquito_preference_assay", executable="triangulator",
+            name="triangulator", output="screen",
+            parameters=[params, calibration]))
+    else:
+        nodes.append(LogInfo(msg=(
+            "no calibration (checkerboard_file / plumbline_file unset in "
+            f"{params} and not given as arguments) -- running tracking only, "
+            "stereo pairs are the final stage")))
+    return nodes
+
+
+def generate_launch_description():
+
     return LaunchDescription([
+        DeclareLaunchArgument("params_file", default_value=resolve_config(
+            "tracking_params.yaml")),
         DeclareLaunchArgument("session", default_value=""),
         DeclareLaunchArgument("source_a", default_value=""),
         DeclareLaunchArgument("source_b", default_value=""),
         DeclareLaunchArgument("rate_hz", default_value="200.0"),
         DeclareLaunchArgument("loop", default_value="False"),
-        DeclareLaunchArgument("roi_a", default_value=DEFAULT_ROI_A),
-        DeclareLaunchArgument("roi_b", default_value=DEFAULT_ROI_B),
-        DeclareLaunchArgument("image_qos", default_value="reliable"),
+        DeclareLaunchArgument("roi_a", default_value=""),
+        DeclareLaunchArgument("roi_b", default_value=""),
+        DeclareLaunchArgument("image_qos", default_value=""),
         DeclareLaunchArgument("checkerboard_file", default_value=""),
         DeclareLaunchArgument("plumbline_file", default_value=""),
-        DeclareLaunchArgument("max_reprojection_error_px", default_value="0.0"),
-        DeclareLaunchArgument("report_period_sec", default_value="5.0"),
-        DeclareLaunchArgument("watch_images", default_value="False"),
+        DeclareLaunchArgument("max_reprojection_error_px", default_value=""),
+        DeclareLaunchArgument("report_period_sec", default_value=""),
+        DeclareLaunchArgument("watch_images", default_value=""),
         DeclareLaunchArgument("plot", default_value="False"),
 
-        tracker("a", "roi_a"),
-        tracker("b", "roi_b"),
-
-        Node(
-            package="mosquito_preference_assay", executable="stereo_sync",
-            name="stereo_sync", output="screen",
-            parameters=[{"log_every_n": 0}],
-        ),
-        Node(
-            package="mosquito_preference_assay", executable="triangulator",
-            name="triangulator", output="screen",
-            condition=IfCondition(have_calibration),
-            parameters=[{
-                "checkerboard_file": LaunchConfiguration("checkerboard_file"),
-                "plumbline_file": LaunchConfiguration("plumbline_file"),
-                "max_reprojection_error_px": LaunchConfiguration(
-                    "max_reprojection_error_px"),
-                "log_every_n": 0,
-            }],
-        ),
-        Node(
-            package="mosquito_preference_assay", executable="pipeline_monitor",
-            name="pipeline_monitor", output="screen",
-            parameters=[{
-                "report_period_sec": LaunchConfiguration("report_period_sec"),
-                "watch_images": LaunchConfiguration("watch_images"),
-            }],
-        ),
+        OpaqueFunction(function=_nodes),
         Node(
             package="mosquito_preference_assay", executable="trajectory_plotter",
             name="trajectory_plotter", output="screen",
