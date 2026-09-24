@@ -83,12 +83,18 @@ class JitterStimulus(Stimulus):
     type_name = "jitter"
 
     def __init__(self, diameter_px, fill_gray=20, amplitude_px=20, noise_speed=1.2,
-                 seed_x=None, seed_y=None):
+                 seed_x=None, seed_y=None, mirror_x=False, mirror_y=False):
         super().__init__(diameter_px)
         self.fill_gray = fill_gray
         self._fill = py5.color(fill_gray)
         self.amplitude_px = amplitude_px
         self.noise_speed = noise_speed
+        # Negate one or both axes. With shared seeds this gives two instances
+        # the SAME path mirrored rather than the same path repeated: matched in
+        # speed, excursion and timing, but not moving in lockstep, which is
+        # what you want when a pair like this can appear side by side.
+        self.mirror_x = bool(mirror_x)
+        self.mirror_y = bool(mirror_y)
         # Per-instance offsets into the (globally seeded, see assay.setup) noise
         # field so left/right copies don't wander in lockstep. Fixed at build
         # time -- pass explicit values from the trial RNG for reproducibility;
@@ -99,6 +105,10 @@ class JitterStimulus(Stimulus):
     def display(self, cx, cy, t):
         dx = (py5.noise(self.seed_x + t * self.noise_speed) - 0.5) * 2 * self.amplitude_px
         dy = (py5.noise(self.seed_y + t * self.noise_speed) - 0.5) * 2 * self.amplitude_px
+        if self.mirror_x:
+            dx = -dx
+        if self.mirror_y:
+            dy = -dy
         py5.no_stroke()
         py5.fill(self._fill)
         py5.ellipse(cx + dx, cy + dy, self.diameter_px, self.diameter_px)
@@ -110,6 +120,8 @@ class JitterStimulus(Stimulus):
             "noise_speed": self.noise_speed,
             "seed_x": self.seed_x,
             "seed_y": self.seed_y,
+            "mirror_x": self.mirror_x,
+            "mirror_y": self.mirror_y,
         }
 
 

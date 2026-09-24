@@ -10,13 +10,19 @@
 #     jitter_small  wanders +/-30 px        -- the manipulation
 #     jitter_large  wanders +/-80 px        -- the same, 2.7x further
 #
-# The jitter pair is the comparison this file exists for, so it is set up as a
-# ONE-VARIABLE manipulation: identical fill, identical noise_speed, and
-# identical seed_x/seed_y, which makes both trace the SAME path and differ in
-# amplitude alone. Without the pinned seeds they wander independently and a few
-# seconds of Perlin noise does not reliably show the larger one as larger --
-# measured 1.57x spread for a 2x amplitude, and near-identical in y. Pinned,
-# the excursion ratio is exactly 80/30 on every axis.
+# The jitter pair is the comparison this file exists for, so it is a
+# ONE-VARIABLE manipulation: identical fill and noise_speed, and identical
+# seed_x/seed_y so both trace the same underlying path, differing in amplitude
+# alone. Without the pinned seeds they wander independently, and a few seconds
+# of Perlin noise does not reliably show the larger one as larger -- measured
+# 1.57x spread for a 2x amplitude, and near-identical in y. Pinned, the
+# excursion ratio is exactly 80/30 on every axis.
+#
+# jitter_large is additionally MIRRORED in both axes. Sharing seeds without
+# mirroring makes the two move in perfect lockstep when they appear together,
+# which reads as one object seen twice rather than two things to choose
+# between. Mirrored, they stay matched in speed, excursion and timing while
+# moving independently.
 #
 # ---------------------------------------------------------------------------
 # RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
@@ -24,14 +30,13 @@
 # Which screen, and where on it, comes from your assay params instead:
 #
 #     ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-#         params_file:=~/rig/arena1_assay_params.yaml \
-#         experiment_file:=jitter_amplitude \
-#         fullscreen:=true monitor:=2
+#         experiment_file:=jitter_amplitude
 #
-# See the README, "Deploying to another rig". The one overlap is the circle
-# centres: the display: block below sets them, and `left_center_px` /
-# `right_center_px` in your assay params override them, which is what
-# display_check writes when you drag the circles into place.
+# The rig's half lives in config/assay_params.local.yaml (copied from
+# config/assay_params.yaml, gitignored) and in the calibration display_check
+# writes. Those override the display: block below -- centres AND diameter --
+# so leave this file rig-independent. See the README, "Deploying to another
+# rig".
 # ---------------------------------------------------------------------------
 schema: mosquito_preference_assay/experiment/1
 name: jitter_amplitude
@@ -69,6 +74,13 @@ stimuli:
       noise_speed: 1.2
       seed_x: 111.0
       seed_y: 777.0
+      # Same seeds as jitter_small, so the same underlying path -- but
+      # MIRRORED, so when the two are drawn side by side they are matched in
+      # speed, excursion and timing without moving in lockstep. Unmirrored
+      # they track each other exactly, which reads as one object rather than
+      # two, and is a strange thing to ask an animal to choose between.
+      mirror_x: true
+      mirror_y: true
 
 conditions:
   # Two distinct stimuli per trial, drawn at random, sides randomised. Over
@@ -96,9 +108,8 @@ display:
   background_gray: 255
 
   # null -> auto: left at a quarter of the screen width, right at three
-  # quarters, both at mid-height. Override per rig with left_center_px /
-  # right_center_px in your assay params (display_check writes these), rather
-  # than editing them here -- this file should stay rig-independent.
+  # quarters, both at mid-height. display_check's calibration overrides these
+  # per rig, so leave them alone here -- this file should stay portable.
   left_center_px: null
   right_center_px: null
 

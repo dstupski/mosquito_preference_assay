@@ -383,7 +383,7 @@ looks identical in every trial it appears in:
 | `blank` | `blank` | nothing drawn — the empty control |
 | `static_black` | `static_dark` | motionless dark circle |
 | `jitter_small` | `jitter` | wanders, amplitude 30 px |
-| `jitter_large` | `jitter` | **same path**, amplitude 80 px (2.7x) |
+| `jitter_large` | `jitter` | **same path, mirrored**, amplitude 80 px (2.7x) |
 | `telescope_inward` | `telescope` | rings contracting toward the center |
 | `telescope_outward` | `telescope` | rings expanding — the looming direction |
 | `grating_down` | `moving_grating` | whole-field stripes drifting down |
@@ -392,9 +392,14 @@ looks identical in every trial it appears in:
 | `grating_outward` | `split_grating` | halves stream out to left and right |
 
 The two jitter levels pin `seed_x`/`seed_y` to the *same* values, so they trace
-an identical path and differ in amplitude alone — a one-variable manipulation,
-and the reason they read as one motion at two sizes rather than two unrelated
-wanders. Delete those lines from both to get independent per-trial wander back.
+the same underlying path and differ in amplitude alone — a one-variable
+manipulation, and the reason they read as one motion at two sizes rather than
+two unrelated wanders. `jitter_large` additionally sets `mirror_x`/`mirror_y`:
+shared seeds *without* mirroring make the pair move in perfect lockstep when
+they appear together, which reads as one object seen twice rather than two
+things to choose between. Mirrored, they stay matched in speed, excursion and
+timing while moving independently. Delete the seed lines from both to get
+fully independent per-trial wander back.
 
 The panel is drawn on a **white** background (`background_gray: 255`), and
 every patterned stimulus sets `color_a_gray: 255` so its light phase is the

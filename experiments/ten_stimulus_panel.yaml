@@ -68,6 +68,13 @@ stimuli:
       noise_speed: 1.2
       seed_x: 111.0
       seed_y: 777.0
+      # Same seeds as jitter_small, so the same underlying path -- but
+      # MIRRORED, so when the two are drawn side by side they are matched in
+      # speed, excursion and timing without moving in lockstep. Unmirrored
+      # they track each other exactly, which reads as one object rather than
+      # two, and is a strange thing to ask an animal to choose between.
+      mirror_x: true
+      mirror_y: true
 
   # 5. rings contracting toward the center (negative speed = inward)
   telescope_inward:

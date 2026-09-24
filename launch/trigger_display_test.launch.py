@@ -50,6 +50,8 @@ Arguments
     repeat_sec       0.0       >0 fires repeatedly, to watch several trials
     bag_dir          ./display_test_<timestamp>
     record           true      false = no recording, just the display
+    record_all       true      true -> `ros2 bag record -a` (everything);
+                               false -> the assay topics + the trigger only
 """
 
 import datetime
@@ -72,7 +74,7 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -149,8 +151,23 @@ def generate_launch_description():
         }],
     )
 
-    recorder = ExecuteProcess(
-        condition=IfCondition(LaunchConfiguration("record")),
+    # -a by default: the point of a rehearsal is to prove the recording path,
+    # and with no camera in this launch there is nothing large to capture, so
+    # recording everything is both cheap and a more faithful dry run of
+    # triggered_assay (which also defaults to -a).
+    record_everything = PythonExpression(
+        ["'", LaunchConfiguration("record_all"), "'.lower() == 'true'"])
+    recorder_all = ExecuteProcess(
+        condition=IfCondition(PythonExpression(
+            ["'", LaunchConfiguration("record"), "'.lower() == 'true' and ",
+             record_everything])),
+        cmd=["ros2", "bag", "record", "-a", "-o", LaunchConfiguration("bag_dir")],
+        output="screen",
+    )
+    recorder_selected = ExecuteProcess(
+        condition=IfCondition(PythonExpression(
+            ["'", LaunchConfiguration("record"), "'.lower() == 'true' and not ",
+             record_everything])),
         cmd=["ros2", "bag", "record", "-o", LaunchConfiguration("bag_dir"),
              "/stimulus_publisher/experiment_info",
              "/stimulus_publisher/stimulus_state",
@@ -171,8 +188,10 @@ def generate_launch_description():
         DeclareLaunchArgument("repeat_sec", default_value="0.0"),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),
         DeclareLaunchArgument("record", default_value="true"),
+        DeclareLaunchArgument("record_all", default_value="true"),
 
-        recorder,
+        recorder_all,
+        recorder_selected,
         TimerAction(period=2.0, actions=[sketch]),
         # after the sketch, so the trigger cannot arrive before it is armed
         TimerAction(period=4.0, actions=[pseudo_trigger]),
