@@ -30,7 +30,7 @@
 # Which screen, and where on it, comes from your assay params instead:
 #
 #     ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-#         experiment_file:=jitter_amplitude
+#         experiment_file:=sippell_retest_experiment
 #
 # The rig's half lives in config/assay_params.local.yaml (copied from
 # config/assay_params.yaml, gitignored) and in the calibration display_check
@@ -39,7 +39,7 @@
 # rig".
 # ---------------------------------------------------------------------------
 schema: mosquito_preference_assay/experiment/1
-name: jitter_amplitude
+name: sippell_retest_experiment
 description: >-
   Blank and static-dark controls against two jitter amplitudes that trace the
   same path, to separate "is it moving" from "how far is it moving".

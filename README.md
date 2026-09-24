@@ -130,7 +130,7 @@ Which command do you want? Most people need the first group only:
 
 ```
 experiments/    two_choice_default · control_vs_grating · single_trigger
-                ten_stimulus_panel · jitter_amplitude
+                ten_stimulus_panel · sippell_retest_experiment
 config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
 launch/         assay · detector · display_check · trigger_display_test
                 triggered_assay (the rig workflow) · tracking_benchmark
@@ -283,7 +283,7 @@ projector is overscanning, and every position you just set is shifted.
 
 ```bash
 ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    experiment_file:=jitter_amplitude
+    experiment_file:=sippell_retest_experiment
 ```
 
 It comes up ARMED, fires its own trigger after a few seconds, runs the trial,
@@ -299,8 +299,8 @@ ros2 bag info display_test_*        # metadata.yaml present = it closed cleanly
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=jitter_amplitude \
-    bag_dir:=~/data/jitter_amplitude/animal_01
+    experiment_file:=sippell_retest_experiment \
+    bag_dir:=~/data/sippell_retest_experiment/animal_01
 ```
 
 One launch = one animal = one bag. Before the first real animal, set the
@@ -315,7 +315,7 @@ several and switch between them, name them and pass the one you want:
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    params_file:=config/rig_b.local.yaml experiment_file:=jitter_amplitude
+    params_file:=config/rig_b.local.yaml experiment_file:=sippell_retest_experiment
 ```
 
 Anything matching `config/*.local.yaml` is gitignored, so named setups never
@@ -636,10 +636,10 @@ the circles where you put them, at the size you set:
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=jitter_amplitude                     # uses the current one
+    experiment_file:=sippell_retest_experiment                     # uses the current one
 
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=jitter_amplitude \
+    experiment_file:=sippell_retest_experiment \
     display_config:=config/20260923_display_config.yaml   # or a specific one
 ```
 
@@ -875,12 +875,12 @@ Pass it on the command line rather than editing the launch file's default:
 # one animal, the full rig workflow
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
     params_file:=~/rig/assay_params.yaml \
-    experiment_file:=jitter_amplitude
+    experiment_file:=sippell_retest_experiment
 
 # rehearse the same thing with no camera
 ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
     params_file:=~/rig/assay_params.yaml \
-    experiment_file:=jitter_amplitude
+    experiment_file:=sippell_retest_experiment
 
 # check the display and align the circles
 ros2 launch mosquito_preference_assay display_check.launch.py \
