@@ -1651,60 +1651,43 @@ dual_video_publisher ─┬─> tracker (cam_a) ─┐
 
 ```bash
 ros2 run mosquito_preference_assay triangulator --ros-args \
-    -p checkerboard_file:=/path/Checkerboard_2025_April_10.npy \
-    -p plumbline_file:=/path/Plumbline_2025_April_10.npy \
+    -p checkerboard_file:=/path/Checkerboard_<date>.npy \
+    -p plumbline_file:=/path/Plumbline_<date>.npy \
     -p max_reprojection_error_px:=3.0
 ```
 
-Output is `geometry_msgs/PointStamped` on `/tracking/position_3d` — real
-x/y/z in **mm**, in the calibration's world frame, carrying the original
-camera-frame stamp. `trajectory_plotter` subscribes to exactly this by
-default, so the two compose with no arguments.
+Output is `geometry_msgs/PointStamped` on `/tracking/position_3d` — x/y/z in
+**mm** in the calibration's world frame, carrying the original camera-frame
+stamp. `trajectory_plotter` subscribes to exactly this by default, so the two
+compose with no arguments.
 
-The math (undistort → `cv2.triangulatePoints` → axis remap → plumbline
-rotation → reprojection error) is a direct port of `triangulate()` from
-`validate_mosquito_centroid_tracking_vid_output.py` in the calibration set,
-run per message instead of over a recorded array — verified to reproduce it
-to 6e-11 mm.
+Per pair: undistort → `cv2.triangulatePoints` → axis remap → plumbline
+rotation → reprojection error.
 
 | Param | Default | Meaning |
 |---|---|---|
 | `topic` | `/tracking/stereo_track` | `stereo_track/1` JSON input |
 | `output_topic` | `/tracking/position_3d` | `geometry_msgs/PointStamped` output, mm |
-| `checkerboard_file` | — | **required**, path to `Checkerboard_<date>.npy` |
-| `plumbline_file` | — | **required**, path to `Plumbline_<date>.npy` |
+| `checkerboard_file` | — | **required**, intrinsics + projection matrices |
+| `plumbline_file` | — | **required**, 3×3 rotation into the gravity-aligned frame |
 | `frame_id` | `arena` | output `header.frame_id` |
 | `max_reprojection_error_px` | `0.0` | drop triangulations worse than this; `0` = keep all |
 | `log_every_n` | `200` | log rate + last reprojection error every N |
 
-**Calibration is rig-specific and is not shipped with this package** — point
-the two parameters at your rig's pair. Expected layout of the 27×5
-`Checkerboard` array (rows 6–11 and 20–26 exist but are unused, matching the
-reference script): `[0:3]` K0 · `[3:6]` K1 · `[12:15]` P0 · `[15:18]` P1 ·
-`[18:19]`/`[19:20]` distortion. `Plumbline` is 3×3, rotating the triangulated
-point into the gravity-aligned world frame.
+**Calibration is rig-specific and is not shipped with this package.** The
+`Checkerboard` array is 27×5, read as `[0:3]` K0 · `[3:6]` K1 · `[12:15]` P0 ·
+`[15:18]` P1 · `[18:19]`/`[19:20]` distortion.
 
 **Camera order matters.** `topic_a` must be the camera the calibration calls
-cam0. Getting it backwards still triangulates, but badly — on real footage
-the correct order gave a **0.25 px** median reprojection error versus
-**2.34 px** swapped, and 97% vs 70% of frames under 3 px. If your errors look
-high, try the swap before blaming the calibration.
+cam0. Getting it backwards still triangulates, just badly — an order of
+magnitude worse reprojection error. If errors look high, try the swap before
+blaming the calibration.
 
-**Reprojection error is your per-frame quality signal.** It cleanly separates
-good frames from frames where the two cameras locked onto *different* objects
-— which is exactly what happens with two mosquitoes in the arena. Measured
-across five recorded sessions against one calibration:
-
-| session | median | p90 | ≤ 3 px | note |
-|---|---|---|---|---|
-| A (single mosquito) | 0.25 px | 0.59 | 97.3% | |
-| B (single mosquito) | 0.54 px | 0.86 | 99.2% | |
-| C | 2.50 px | **150.95** | 50.7% | two mosquitoes in the arena |
-| D | 0.88 px | **233.78** | 53.0% | likewise |
-| E | 1.47 px | 1.64 | 96.4% | recorded a day *before* the calibration |
-
-A blown-up p90 with a sane median means mismatched targets, not bad
-calibration. `max_reprojection_error_px:=3.0` filters them out.
+**Reprojection error is the per-frame quality signal.** It separates good
+frames from frames where the two cameras locked onto *different* objects,
+which is what happens with more than one animal in the arena. A blown-up p90
+with a sane median means mismatched targets, not bad calibration;
+`max_reprojection_error_px:=3.0` filters them out.
 
 ---
 
