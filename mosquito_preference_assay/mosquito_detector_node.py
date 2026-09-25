@@ -29,6 +29,8 @@ config/detector_params.yaml. In brief:
     roi         (str)   "x0,y0,x1,y1" px box, exclusive; "" = whole frame
     diff_threshold (int), min_area_px / max_area_px (double), morph_kernel (int)
     consecutive_frames (int), cooldown_sec (double)
+    arm_topic   (str)   the assay's stimulus_state; fire only while it is
+                        armed. "" = fire whenever a mosquito is seen.
     publish_debug_image (bool)
 
 Test without a real camera: video_publisher_node.py plays a video file or a
@@ -48,7 +50,12 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
@@ -75,6 +82,19 @@ class MosquitoDetector(Node):
         self._cooldown_sec = float(self.declare_parameter("cooldown_sec", 10.0).value)
         publish_debug = bool(self.declare_parameter("publish_debug_image", False).value)
 
+        # Hold fire unless the assay can actually use a detection. Without it
+        # the detector is live the moment it starts, while the sketch is still
+        # booting its JVM -- so the animal's first approach, the one it
+        # actually made, is refused and lost, and the trial instead runs on
+        # whatever the animal does after the cooldown expires. Watching the
+        # sketch's own latched phase replaces a guessed startup delay with the
+        # fact itself. It also suppresses detections DURING a trial, which
+        # until now were masked only by cooldown_sec happening to be long
+        # enough. "" disables the gate.
+        self._arm_topic = str(self.declare_parameter("arm_topic", "").value).strip()
+        self._assay_phase = None
+        self._held = 0
+
         self._bridge = CvBridge()
         self._background = None
         self._consecutive = 0
@@ -88,10 +108,36 @@ class MosquitoDetector(Node):
         image_qos = qos_profile_sensor_data if image_qos_kind == "sensor_data" else 10
         self._sub = self.create_subscription(Image, self._image_topic, self._on_image, image_qos)
 
+        if self._arm_topic:
+            # TRANSIENT_LOCAL to match the sketch's latched publisher -- with
+            # the default volatile QoS the subscription silently never
+            # connects, and the detector would hold fire forever.
+            latched = QoSProfile(
+                depth=1,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            )
+            self.create_subscription(String, self._arm_topic, self._on_state, latched)
+
         self.get_logger().info(
             f"watching '{self._image_topic}' (qos={image_qos_kind}), roi={self._roi}, "
             f"publishing detections to '{out_topic}'"
+            + (f"; holding fire until '{self._arm_topic}' reports armed"
+               if self._arm_topic else "")
         )
+
+    def _on_state(self, msg):
+        try:
+            phase = json.loads(msg.data).get("phase")
+        except (ValueError, AttributeError):
+            return
+        if phase != self._assay_phase:
+            self._assay_phase = phase
+            self.get_logger().info(f"assay phase: {phase}")
+
+    def _armed(self):
+        """Whether a detection right now could actually start a trial."""
+        return not self._arm_topic or self._assay_phase == "armed"
 
     def _on_image(self, msg):
         try:
@@ -131,6 +177,18 @@ class MosquitoDetector(Node):
         since_last = None if self._last_fire_monotonic is None else now - self._last_fire_monotonic
         if since_last is not None and since_last < self._cooldown_sec:
             return  # still cooling down from the last fire
+
+        if not self._armed():
+            # Seen, but the assay cannot use it. Do NOT start the cooldown:
+            # the moment the sketch finishes arming we want the very next
+            # sighting to count, not to be sitting out a cooldown started by
+            # a detection that never ran anything.
+            self._held += 1
+            if self._held in (1, 10) or self._held % 100 == 0:
+                self.get_logger().info(
+                    f"holding fire (assay phase={self._assay_phase}) -- "
+                    f"{self._held} detections suppressed")
+            return
 
         self._last_fire_monotonic = now
         self._consecutive = 0

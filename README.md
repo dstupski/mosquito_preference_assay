@@ -23,7 +23,8 @@ graphics; ROS 2 Humble for the plumbing.
 [deploying to another rig](#deploying-to-another-rig) ·
 [custom params file](#launching-with-your-own-params-file) ·
 [where does this setting go?](#where-does-this-setting-go) ·
-[the trigger region](#setting-the-trigger-region-for-a-new-rig) ·
+[**running the real experiment**](#running-the-real-experiment) ·
+[the trigger zone](#setting-the-trigger-region-for-a-new-rig) ·
 [triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
@@ -1139,6 +1140,137 @@ now refuses such a trigger with a `TRIGGER REFUSED` warning, and
 
 ---
 
+## Running the real experiment
+
+`arena_experiment.launch.py` is the one you run with an animal in the arena.
+It assumes your stereo camera package is **already publishing** — it starts no
+cameras.
+
+```bash
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    save_dir:=/data/mosquito/2026-09-25
+```
+
+Check the cameras first. A launch against silent cameras comes up armed and
+simply waits forever:
+
+```bash
+ros2 topic hz /cam_sync/cam0/image_raw
+```
+
+### What happens
+
+```
+launch ──> recorder up, writing every topic EXCEPT the camera feeds
+      ├──> stimulus_publisher opens on the projector and sits ARMED
+      └──> mosquito_detector watches the trigger zone, HOLDING FIRE
+                    │
+   sketch reports armed ──> detector goes live
+                    │
+   mosquito detected ──> stimuli appear (that same message is the trigger)
+                    ├──> a second bag starts, for the video
+        duration ───> trial ends ──> sketch exits ──> both bags finalized
+```
+
+### Where it saves
+
+`save_dir` is the parent; each run gets its own timestamped folder:
+
+```
+/data/mosquito/2026-09-25/
+    trial_20260925_094717/
+        assay/    everything but the video — up from launch, no gap
+        video/    the two camera feeds — starts at the trigger
+```
+
+`run_name:=blackfly_m3` changes the prefix. Both bags carry the same
+timestamps, so they align on playback.
+
+**Two bags, because video cannot be treated like the other topics.** Two
+1440×1080 feeds at 200 fps is ~620 MB/s: recording from launch would cost
+~2.2 TB per hour of waiting for an animal, and buffering 15 s of it in RAM
+(what `--snapshot-mode` does) would need ~9.3 GB. So the video recorder is
+spawned at the trigger instead. **Budget ~9 GB per trial at 200 fps** — a
+measured 18 s test at 30 fps wrote 3.3 GB.
+
+The cost of starting at the trigger is **0.16 s** before the first frame lands
+(rosbag2 subscribing to an already-live topic) — about 30 frames at 200 fps.
+The assay topics have no such gap: the detection event, the stimulus
+definitions and the trial timing come from the recorder that has been up since
+launch.
+
+### The detector holds fire until the display is armed
+
+The sketch takes a few seconds to boot its JVM and open the window. A
+detection arriving in that window **cannot** run a trial, and before this was
+handled the animal's first approach was refused and the trial ran on whatever
+it did after the 10 s cooldown instead.
+
+So the detector watches the sketch's own `stimulus_state` and stays silent
+until it reports `armed` — the fact itself, rather than a guessed
+`detector_delay`. A real run looks like this:
+
+```
+mosquito_detector: holding fire (assay phase=None) -- 100 detections suppressed
+mosquito_detector: assay phase: armed
+mosquito_detector: mosquito_detected at (211,926) area=1112     ← 10 ms later
+stimulus_publisher: [run 1] trial 0 (running): LEFT=jitter_small RIGHT=blank
+```
+
+It also suppresses detections *during* a trial, which previously relied on
+`cooldown_sec` being long enough. Set `arm_topic: ""` in `detector_params` to
+disable the gate.
+
+### Which camera detects
+
+Normally you do not set this at launch. `trigger_roi` saves the camera
+alongside the zone, and this launch layers that file over `detector_params`,
+so **drawing the zone on cam0 is what points detection at cam0**. For one run:
+`detection_camera:=cam1`.
+
+Every resolved choice is printed at startup, so a wrong file is visible
+immediately rather than after the session:
+
+```
+run folder      : /data/mosquito/2026-09-25/trial_20260925_094717
+  assay bag     : .../assay
+  video bag     : .../video  (starts at the trigger)
+display calib   : .../config/display_geometry.local.yaml
+trigger zone    : .../config/trigger_roi.local.yaml
+detection camera: /cam_sync/cam0/image_raw
+video topics    : /cam_sync/cam0/image_raw, /cam_sync/cam1/image_raw
+```
+
+### Arguments
+
+| | | |
+|---|---|---|
+| `save_dir` | *cwd* | parent directory for the run folder |
+| `run_name` | `trial` | run folder prefix; a timestamp is appended |
+| `experiment_file` | `sippell_retest_experiment` | |
+| `cam0_topic` / `cam1_topic` | `/cam_sync/cam{0,1}/image_raw` | |
+| `detection_camera` | *from the zone file* | `cam0` \| `cam1` \| a topic |
+| `trigger_config` | *`trigger_roi.local.yaml`* | a specific saved zone |
+| `params_file` | `config/assay_params.yaml` | prefers `*.local.yaml` |
+| `display_config` | *`display_geometry.local.yaml`* | a specific alignment |
+| `monitor` / `fullscreen` | *from params file* | |
+| `detector_delay` | `4.0` | backstop; the arming gate is the real guard |
+| `record_video` | `true` | `false` = assay topics only |
+| `record` | `true` | `false` = dry run, no bags |
+| `master_seed` | *from params file* | |
+
+### Which launch file to use
+
+| | |
+|---|---|
+| `arena_experiment` | **the real run** — two cameras, video recorded from the trigger |
+| `triggered_assay` | one camera, simpler recording; the original single-feed workflow |
+| `trigger_display_test` | no camera at all — rehearse a trial with a fake trigger |
+| `display_check` / `trigger_roi` | calibration: the projector, and the camera |
+
+---
+
 ## Detecting a mosquito
 
 `mosquito_detector_node` watches a camera feed, and when something
@@ -1206,25 +1338,54 @@ equipment, indicator lights, mesh edges and reflections are all mosquito-sized
 blobs as far as the detector is concerned, and any of them can start a trial.
 Setting it is part of commissioning a rig, not an optimisation.
 
-**Deriving it.** Turn on the annotated debug image, which draws the current
-ROI box and circles whatever the detector accepts, then iterate:
+**Drawing it: `trigger_roi`.** Point it at the live camera and drag the box
+onto the arena. It is the `display_check` of the camera side.
 
 ```bash
-# terminal 1 — the real camera, or replay footage to stand in for it
-ros2 run mosquito_preference_assay video_publisher --ros-args \
-    -p source:=/path/to/session/cam_a -p rate_hz:=20.0 -p loop:=true
-
-# terminal 2 — the detector, with a first guess at the box
-ros2 run mosquito_preference_assay mosquito_detector --ros-args \
-    -p publish_debug_image:=true -p roi:=600,300,1100,800
-
-# terminal 3 — watch it
-ros2 run rqt_image_view rqt_image_view /mosquito_detector/debug_image
+ros2 launch mosquito_preference_assay trigger_roi.launch.py
+ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1
 ```
 
-Adjust `roi`, restart the detector, look again. You are aiming for a box that
-contains the whole region the animal can fly in and **nothing** that is not
-the animal. Then check the consequence rather than the picture:
+| | |
+|---|---|
+| drag inside the box | move the zone |
+| drag a corner | resize |
+| drag on empty image | draw a new zone |
+| arrows (or `w`/`a`/`e`/`x`) | nudge 1 px |
+| `[` `]` | shrink / grow about the centre |
+| `d` | detection overlay on/off |
+| `b` | re-capture the background frame |
+| `f` | reset to the whole frame |
+| `s` | **save** |
+
+Everything outside the zone is dimmed, so the region the detector is blind to
+is visible rather than inferred. The overlay runs the detector's own code with
+the detector's own thresholds: a blob boxed **green** would fire a trial, a
+**grey** one is seen and ignored. The counter reads
+`blobs: 1 inside (would fire), 3 outside (ignored)` — tune until the animal is
+the only thing inside.
+
+Press `b` after anything in the scene changes permanently (a moved lamp, a
+repositioned feeder); the background frame is captured once and everything
+different from it is foreground.
+
+**`s` is the whole handoff.** It writes `config/trigger_roi.local.yaml`, which
+every launch layers over `detector_params` automatically — nothing to copy:
+
+```yaml
+/**:
+  ros__parameters:
+    image_topic: "/cam_sync/cam0/image_raw"
+    roi: "412,300,980,835"
+```
+
+Note that **`image_topic` is saved with the zone**. A pixel box only means
+something on the camera it was drawn on, so choosing the camera in the tool is
+what points detection at that camera — the two facts cannot drift apart. It
+also writes a dated archive (`save_dir:=/data/rig` to choose where), and
+`trigger_config:=<path>` runs an older one.
+
+Then check the consequence rather than the picture:
 
 ```bash
 ros2 topic echo /arena/mosquito_present
@@ -1232,6 +1393,7 @@ ros2 topic echo /arena/mosquito_present
 
 With no animal in the arena this should stay silent. Anything arriving is a
 false trigger, and on the rig it would burn an animal's trial on a reflection.
+
 
 **Starting numbers.** For the arena in the bundled footage the tracking ROIs
 are `340,40,1260,1070` (cam_a) and `350,20,1370,1070` (cam_b) — they exclude

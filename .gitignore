@@ -16,6 +16,7 @@ log/
 # that. The launch files prefer a .local.yaml when one exists, so a pull can
 # never modify the config you are actually running on.
 config/*.local.yaml
+*_trigger_roi.yaml
 
 # Rig alignment written by display_check. These describe THIS machine's
 # projector on a given day, so they are never ours to track -- and ignoring

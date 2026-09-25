@@ -29,11 +29,16 @@
 
     # --- input ---------------------------------------------------------- #
     # The camera image feed to watch (sensor_msgs/Image).
-    image_topic: "/camera/image_raw"
+    # THE DETECTION CAMERA. Normally you do not set this by hand: the
+    # trigger_roi tool writes both the zone and the camera it was drawn on
+    # into config/trigger_roi.local.yaml, which every launch layers OVER
+    # this file. A pixel box only means something on the camera it came
+    # from, so the two stay together.
+    image_topic: "/cam_sync/cam0/image_raw"
     # QoS to subscribe with -- must be compatible with the publisher:
     #   reliable      most simple publishers, and this package's video_publisher
     #   sensor_data   best-effort; what most real camera drivers use
-    image_qos: "reliable"
+    image_qos: "sensor_data"
 
     # --- output ------------------------------------------------------- #
     # Where detection events go (std_msgs/String, JSON, schema
@@ -45,7 +50,12 @@
     # "x0,y0,x1,y1" pixel box (x1/y1 exclusive) that detection is restricted
     # to. Anything outside it -- equipment, lights, mesh/frame edges,
     # reflections -- is invisible to the detector. "" = whole frame (rarely
-    # what you want). Derive it once per rig with publish_debug_image: true.
+    # what you want).
+    #
+    # Draw it on the live feed instead of guessing numbers:
+    #     ros2 launch mosquito_preference_assay trigger_roi.launch.py
+    # then press `s`. That writes config/trigger_roi.local.yaml, which
+    # overrides this value and is gitignored.
     roi: ""
 
     # --- detection ------------------------------------------------- #
@@ -67,6 +77,13 @@
     consecutive_frames: 3
     # Minimum seconds between fired events.
     cooldown_sec: 10.0
+
+    # The assay's stimulus_state topic. While it does not report "armed",
+    # detections are counted but NOT fired -- the display is still booting,
+    # or a trial is already running, and an event now would be discarded by
+    # the sketch and cost you the animal's approach. "" fires regardless.
+    # arena_experiment.launch.py sets this for you.
+    arm_topic: ""
 
     # --- tuning aid ------------------------------------------- #
     # Publish an annotated image on ~/debug_image (ROI box + detected blob box)

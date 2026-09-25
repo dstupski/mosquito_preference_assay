@@ -30,6 +30,7 @@ def local_variant(path):
 
 
 DEFAULT_DISPLAY_CONFIG = "display_geometry.local.yaml"
+DEFAULT_TRIGGER_CONFIG = "trigger_roi.local.yaml"
 
 
 def _config_dir():
@@ -71,6 +72,36 @@ def resolve_display_config(spec=""):
     if not directory:
         return None
     path = os.path.join(directory, DEFAULT_DISPLAY_CONFIG)
+    return path if os.path.exists(path) else None
+
+
+def resolve_trigger_config(spec=""):
+    """The trigger-zone calibration to layer over the detector's params, or None.
+
+    Exactly the display_config story, for the camera instead of the projector:
+    `trigger_roi` writes this file when you press `s`, and every launch that
+    starts a detector layers it AFTER detector_params so it wins.
+
+    It carries `image_topic` as well as `roi`, deliberately. A box in pixel
+    coordinates only means something on the camera it was drawn on, so the two
+    travel together -- drawing the zone on cam0 is what points detection at
+    cam0. Keeping them in separate files is how you end up aligned on one
+    device and running on another.
+    """
+    spec = (spec or "").strip()
+    if spec:
+        path = os.path.expanduser(spec)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"trigger_config {spec!r} not found. Point it at a file "
+                f"trigger_roi wrote, or leave it empty to use the current "
+                f"{DEFAULT_TRIGGER_CONFIG}.")
+        return os.path.abspath(path)
+
+    directory = _config_dir()
+    if not directory:
+        return None
+    path = os.path.join(directory, DEFAULT_TRIGGER_CONFIG)
     return path if os.path.exists(path) else None
 
 
