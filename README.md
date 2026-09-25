@@ -1576,7 +1576,19 @@ same instant, which is exactly what triangulation needs.
 (A real synchronized pair from the arena footage — two viewpoints on the same
 physical mosquito, ready to feed a 3D calibration.)
 
-### Tested: real footage, 200 fps target
+### Throughput
+
+On 1440×1080 footage with a real ROI, `tracker` ×2 → `stereo_sync` keeps pace
+at **~150–165 Hz with no dropped pairs**; camera decode tops out around
+188 Hz, which is the real ceiling.
+
+Two design points behind that, both worth keeping if you modify the pipeline:
+the trackers are **separate nodes** (a single combined node fell behind and
+permanently lost frames once `message_filters`' sync queue overflowed), and
+`detection.py` crops to the ROI **before** the diff/threshold/morphology
+rather than masking afterwards, which is worth ~6.5× per frame.
+
+## Tested: real footage, 200 fps target
 
 `dual_video_publisher` → two `tracker`s → `stereo_sync`, on the real `cam_a`/
 `cam_b` session, `rate_hz:=200`, real ROI:
@@ -1812,12 +1824,34 @@ arguments to benchmark tracking only. Useful arguments: `rate_hz`, `loop`,
 `roi_a`/`roi_b`, `image_qos`, `max_reprojection_error_px`, `plot:=true` for
 the live 3D view, `watch_images:=true` for input-rate accounting.
 
-### Measured: where the time goes at 200 fps
+### Lag, and the `image_qos` trade-off
 
-End-to-end (image published → 3D point delivered), 776 real frame pairs:
+End-to-end, image published → 3D point delivered:
 
-| Config | Median lag | Points (of 758) | Throughput |
-|---|---|---|---|
+| Config | Median lag | Frames kept |
+|---|---|---|
+| 200 Hz, `reliable` | 56 ms | all |
+| 200 Hz, `sensor_data` | **7.2 ms** | ~85% |
+| 150 Hz, `reliable` | 16 ms | all |
+| 150 Hz, `sensor_data` | **6.9 ms** | ~95% |
+
+**This is a real trade, not a tuning knob.** `reliable` queues (depth 10)
+rather than dropping, so every frame is processed but lag grows to roughly
+*queue depth × frame interval* under load — 56 ms is about 11 frames at
+200 Hz. `sensor_data` (best-effort) always works on the newest frame and
+discards stale ones: ~7 ms, at the cost of frames when saturated.
+
+Use `sensor_data` for closed-loop triggering, where freshness wins.
+Use `reliable` when recording a complete trajectory.
+
+Shrinking the ROI is **not** a lever for lag: there is a floor of a few ms
+even at 200×200 px, because the full frame is still encoded, shipped and
+decoded regardless. Cropping at the *camera* shrinks payload, encode,
+transport and detection together; keeping full frames from crossing a process
+boundary at all (detection inside the camera node, or intra-process
+composition) removes the transport term entirely.
+
+---|---|---|---|
 | 200 Hz, `reliable` | 56 ms | 758 | 181 Hz |
 | 200 Hz, `sensor_data` | **7.2 ms** | 646 | 181 Hz |
 | 150 Hz, `sensor_data` | **6.9 ms** | 716 | 150 Hz |
