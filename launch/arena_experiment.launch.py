@@ -56,6 +56,10 @@ Arguments
                                 A backstop only: the detector additionally
                                 holds fire until the sketch reports ARMED,
                                 so no detection is wasted if the JVM is slow.
+    stimuli_when_armed ""      unset = leave params_file alone. true = the
+                                stimuli play from launch and the trigger only
+                                opens the recording window, so the animal sees
+                                no sudden onset
     record_video     true       false = assay topics only
     record           true       false = no bags at all (dry run)
     trigger_topic    /arena/mosquito_present
@@ -117,6 +121,7 @@ def generate_launch_description():
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("master_seed", default_value=""),
         DeclareLaunchArgument("detector_delay", default_value="4.0"),
+        DeclareLaunchArgument("stimuli_when_armed", default_value=""),
         DeclareLaunchArgument("record_video", default_value="true"),
         DeclareLaunchArgument("record", default_value="true"),
         DeclareLaunchArgument("trigger_topic", default_value=DEFAULT_TRIGGER_TOPIC),
@@ -192,9 +197,10 @@ def generate_launch_description():
             value = _arg(context, name)
             if value:
                 sketch_overrides[key] = cast(value)
-        fullscreen = _arg(context, "fullscreen")
-        if fullscreen:
-            sketch_overrides["fullscreen"] = fullscreen.lower() in ("1", "true", "yes")
+        for name in ("fullscreen", "stimuli_when_armed"):
+            value = _arg(context, name)
+            if value:
+                sketch_overrides[name] = value.lower() in ("1", "true", "yes")
 
         sketch = Node(
             package="mosquito_preference_assay", executable="stimulus_publisher",

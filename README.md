@@ -25,7 +25,8 @@ graphics; ROS 2 Humble for the plumbing.
 [where does this setting go?](#where-does-this-setting-go) ·
 [**running the real experiment**](#running-the-real-experiment) ·
 [the trigger zone](#setting-the-trigger-region-for-a-new-rig) ·
-[triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow)
+[triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow) ·
+[stimuli always playing](#stimuli-playing-the-whole-time--avoiding-an-onset-transient)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
 [stereo tracking](#real-time-stereo-tracking) ·
@@ -1072,6 +1073,61 @@ ros2 run mosquito_preference_assay test_trigger --ros-args \
 
 Equivalent one-liner without the node:
 `ros2 topic pub --once /arena/mosquito_present std_msgs/msg/Bool "{data: true}"`.
+
+### Stimuli playing the whole time — avoiding an onset transient
+
+By default the two circles appear the instant the mosquito is detected. That
+sudden onset is itself something the animal can respond to, and a startle is
+not a preference — so it is a confound sitting directly on top of the measure.
+
+`stimuli_when_armed: true` inverts what the trigger does: the stimuli are
+built and start animating **at launch**, and the trigger opens the **recording
+window** instead of making anything appear. The animal never sees a change.
+
+```bash
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment stimuli_when_armed:=true
+```
+
+Or set it once, in `config/assay_params.local.yaml`:
+
+```yaml
+/**:
+  ros__parameters:
+    stimuli_when_armed: true
+```
+
+The stimuli run on their **own clock**, started at setup and never reset, so
+the trigger changes nothing on screen — not even a one-frame discontinuity in
+a jittering circle's path. What the trigger changes is bookkeeping: `phase`
+goes `armed → running`, `trial_start` is published, and the duration timer
+starts.
+
+```
+[assay] trial 0 PREPARED: jitter_large|jitter_small  LEFT=jitter_small RIGHT=jitter_large
+[assay] ARMED -- stimuli are PLAYING; the trigger starts the recording window
+[assay] trial 0 START (stimuli already playing 7.9s): jitter_large|jitter_small  15.0s
+```
+
+**Two consequences to accept before using it.**
+
+*The pairing is drawn at launch, not at the trigger.* Still randomised from
+the same master seed, just earlier. If you abort before an animal arrives,
+that draw is consumed.
+
+*Every trial begins at a different point in the animation.* Unavoidable if
+the motion is to be continuous — a jittering circle is somewhere different
+after 8 s of waiting than after 30 s. The offset is published as
+`stimulus_elapsed_at_trial_start` in `stimulus_state` and `trial_start`, so
+the position at t=0 of the trial is recoverable rather than lost:
+
+```
+stimulus_elapsed_at_trial_start = 7.86
+trial_duration_sec              = 15.0
+```
+
+It applies to triggered mode only, and the default (`false`) is unchanged:
+armed carries no stimuli, and the trigger builds them.
 
 ### Detector-armed capture — the rig workflow
 

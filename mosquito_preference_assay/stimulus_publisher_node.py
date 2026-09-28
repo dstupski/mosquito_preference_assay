@@ -27,6 +27,10 @@ the `experiment_file` parameter. The rest of the parameters are operational:
 
     experiment_file     string  ""    experiment name / path; "" -> built-in default
     start_mode          string  ""    "" -> derive from the experiment's `trigger:` block
+    stimuli_when_armed  bool    False  draw the stimuli while ARMED, so the
+                        trigger opens the recording window instead of making
+                        the stimuli appear (no onset transient to startle the
+                        animal). Triggered mode only.
                                       (present -> triggered, absent -> auto); or force
                                       "auto" / "triggered"
     trigger_topic       string  ""    "" -> the experiment's `trigger:` topic, else ~/trigger
@@ -142,6 +146,8 @@ class StimulusPublisher(Node):
         circle_diameter_px = diameter if diameter > 0 else None
         window_pos = _center_param(self, "window_pos")
         start_mode = str(self.declare_parameter("start_mode", "").value).strip()
+        stimuli_when_armed = bool(
+            self.declare_parameter("stimuli_when_armed", False).value)
         trigger_topic = str(self.declare_parameter("trigger_topic", "").value).strip()
         trigger_msg_type = str(
             self.declare_parameter("trigger_msg_type", "").value).strip().lower()
@@ -196,6 +202,7 @@ class StimulusPublisher(Node):
             circle_diameter_px=circle_diameter_px,
             show_debug=bool(show_debug),
             start_mode=start_mode,
+            stimuli_when_armed=stimuli_when_armed,
         )
 
         # Latched so a late subscriber / bag immediately learns the current state.

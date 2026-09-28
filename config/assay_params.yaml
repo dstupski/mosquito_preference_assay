@@ -68,6 +68,22 @@
     # "auto" / "triggered".
     start_mode: ""
     # "" -> use the experiment's `trigger:` topic (or ~/trigger). Set here to
+
+    # Draw the stimuli while ARMED, so the trigger starts the RECORDING
+    # WINDOW rather than making the stimuli appear.
+    #
+    # With this false (the default) the two circles pop into existence the
+    # instant the mosquito is detected. A sudden onset in the visual field is
+    # a transient the animal can respond to in its own right, which is a
+    # confound in a preference assay -- you cannot tell a preference from a
+    # startle.
+    #
+    # With it true the stimuli are already playing when the animal arrives
+    # and the trigger changes NOTHING on screen. Two consequences worth
+    # knowing: the pairing is drawn at launch rather than at the trigger, and
+    # each trial starts at a different point in the animation -- published as
+    # stimulus_elapsed_at_trial_start in stimulus_state/trial_start.
+    stimuli_when_armed: false
     # override which node/topic fires the trial.
     trigger_topic: ""
     # "" -> use the experiment's `trigger.msg_type` (or "bool").

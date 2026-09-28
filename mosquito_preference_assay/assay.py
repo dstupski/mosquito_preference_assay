@@ -85,8 +85,19 @@ _cfg = {
     # a confound, not just clutter. Press `d` to toggle it while setting up.
     "show_debug": False,
     # "auto"     -> start trials immediately at setup() (default)
-    # "triggered" -> open ARMED (blank), begin only when start_run() is called
+    # "triggered" -> open ARMED, begin only when start_run() is called
     "start_mode": "auto",
+    # Draw the stimuli while ARMED, so the trigger starts the RECORDING
+    # window rather than the stimuli. The animal then never sees anything
+    # appear: a sudden onset is a looming-like transient and can produce a
+    # startle response, which is a confound in a preference assay.
+    #
+    # The stimuli run on their own clock, started at setup() and never
+    # reset, so the trigger changes nothing on screen at all. The cost is
+    # that the pairing is drawn at LAUNCH rather than at the trigger, and
+    # that each trial begins at a different point in the animation --
+    # recorded as stimulus_elapsed_at_trial_start so analysis can use it.
+    "stimuli_when_armed": False,
     "experiment": None,        # an Experiment instance; None -> Experiment.default()
     # Optional overrides of the experiment's display.*_center_px, handy while
     # aligning the window to the arena without editing the experiment file.
@@ -117,6 +128,12 @@ _rt = {
     "condition_ordered": False,
     "trial_start_wall": 0.0,
     "trial_start_monotonic": 0.0,
+    # When the STIMULI started animating, which is setup() time in
+    # stimuli_when_armed mode and trial start otherwise. Kept separate
+    # from trial_start_monotonic: one drives what is on screen, the other
+    # drives when the trial ends.
+    "stimulus_start_monotonic": 0.0,
+    "stimulus_elapsed_at_trial_start": None,
     "left": None,          # Stimulus instance
     "right": None,         # Stimulus instance
     "left_name": "",
@@ -326,7 +343,13 @@ def setup():
     # carry where on screen the trial will be drawn
     _update_geometry(experiment)
 
-    if triggered:
+    if triggered and _cfg["stimuli_when_armed"]:
+        # Build the stimuli NOW and leave them running. phase stays
+        # "armed": nothing is being recorded as a trial yet.
+        _prepare_trial()
+        print("[assay] ARMED -- stimuli are PLAYING; "
+              "the trigger starts the recording window")
+    elif triggered:
         print("[assay] ARMED -- waiting for start_run() trigger")
     else:
         _begin_trial()
@@ -345,20 +368,26 @@ def draw():
 
     py5.background(experiment.background_gray if experiment else 128)
 
-    if phase == "armed":
+    if start_pending:
+        # A trigger arrived on another thread. py5 object creation must not
+        # happen off the sketch thread, so the work lands here.
+        with _lock:
+            _rt["start_pending"] = False
+        if left is None:
+            _begin_trial()     # classic mode: the trigger builds the stimuli
+            return
+        # stimuli_when_armed: they are already on screen and must NOT be
+        # rebuilt -- rebuilding would reset their clock, and the resulting
+        # jump is the very transient this mode exists to avoid. Only the
+        # trial's bookkeeping starts.
+        _mark_trial_start()
+        return
+
+    if phase == "armed" and left is None:
         if show_debug:
             py5.fill(0)
             py5.text_size(16)
             py5.text("waiting for trigger", py5.width / 2, py5.height / 2)
-        return
-
-    if start_pending:
-        # a trigger arrived on another thread; build the trial here, on the
-        # sketch thread (py5 object creation must not happen off it), then
-        # render it from the next frame.
-        with _lock:
-            _rt["start_pending"] = False
-        _begin_trial()
         return
 
     if phase == "complete" or left is None:
@@ -368,8 +397,16 @@ def draw():
             py5.text("trial complete", py5.width / 2, py5.height / 2)
         return
 
-    t = time.monotonic() - start_monotonic
-    if t >= duration:
+    # The stimuli run on their own clock. In stimuli_when_armed mode that
+    # clock starts at setup() and is never reset, so the trigger is invisible
+    # on screen; otherwise it starts with the trial and this is the same
+    # number it always was.
+    with _lock:
+        stimulus_start = _rt["stimulus_start_monotonic"]
+    now = time.monotonic()
+    t = now - stimulus_start
+
+    if phase == "running" and now - start_monotonic >= duration:
         _finish_run()          # the trial's time is up -> the run is done
         return
 
@@ -519,8 +556,13 @@ def main():
 # --------------------------------------------------------------------------- #
 # the trial + state snapshot
 # --------------------------------------------------------------------------- #
-def _begin_trial():
-    """Draw and build the trial (run on the sketch thread)."""
+def _prepare_trial():
+    """Draw the pairing and build the stimuli, WITHOUT starting the trial.
+
+    Run on the sketch thread. Leaves phase untouched, so in
+    stimuli_when_armed mode the stimuli begin animating immediately while the
+    assay is still armed and nothing is being recorded as a trial yet.
+    """
     with _lock:
         experiment = _rt["experiment"]
         master_rng = _rt["master_rng"]
@@ -538,15 +580,11 @@ def _begin_trial():
     left = build_stimulus(plan.left_type, d, plan.left_params, trial_rng)
     right = build_stimulus(plan.right_type, d, plan.right_params, trial_rng)
 
-    now_wall = time.time()
-    now_monotonic = time.monotonic()
-    trial_uuid = str(uuid.uuid4())
-
     with _lock:
         _rt.update(
             trial_id=trial_id,
             trial_seed=trial_seed,
-            trial_uuid=trial_uuid,
+            trial_uuid=str(uuid.uuid4()),
             trial_duration_sec=plan.duration_sec,
             condition_name=plan.condition_name,
             condition_ordered=plan.condition_ordered,
@@ -554,16 +592,51 @@ def _begin_trial():
             right=right,
             left_name=plan.left_name,
             right_name=plan.right_name,
-            trial_start_wall=now_wall,
-            trial_start_monotonic=now_monotonic,
-            phase="running",
+            # The stimulus clock starts now and is never reset.
+            stimulus_start_monotonic=time.monotonic(),
             complete=False,
         )
 
-    print(f"[assay] trial {trial_id}: {plan.condition_name}  "
+    print(f"[assay] trial {trial_id} PREPARED: {plan.condition_name}  "
           f"LEFT={plan.left_name} RIGHT={plan.right_name}  "
           f"{plan.duration_sec:.1f}s  (trial_seed={trial_seed})")
+    return plan
+
+
+def _mark_trial_start():
+    """Start the trial's clock for stimuli that are already on screen.
+
+    Nothing visual changes -- the stimuli keep their own clock. This only
+    opens the recording window and publishes trial_start.
+    """
+    now_wall = time.time()
+    now_monotonic = time.monotonic()
+    with _lock:
+        elapsed = now_monotonic - _rt["stimulus_start_monotonic"]
+        _rt.update(
+            trial_start_wall=now_wall,
+            trial_start_monotonic=now_monotonic,
+            # How long the stimuli had been playing when the trial began.
+            # Trials start at different points in the animation by design, so
+            # this is needed to interpret where a jittering circle was.
+            stimulus_elapsed_at_trial_start=elapsed,
+            phase="running",
+            complete=False,
+        )
+        trial_id = _rt["trial_id"]
+        name = _rt["condition_name"]
+        duration = _rt["trial_duration_sec"]
+
+    played = (f" (stimuli already playing {elapsed:.1f}s)"
+              if elapsed >= 0.25 else "")
+    print(f"[assay] trial {trial_id} START{played}: {name}  {duration:.1f}s")
     _notify_state()
+
+
+def _begin_trial():
+    """Build the trial AND start it now (the classic, trigger-builds mode)."""
+    _prepare_trial()
+    _mark_trial_start()
 
 
 def _finish_run():
@@ -636,6 +709,12 @@ def current_state():
             },
             "trial_start_wall": _rt["trial_start_wall"],
             "trial_duration_sec": _rt["trial_duration_sec"],
+            # None unless the stimuli were already playing when the trial
+            # began (stimuli_when_armed). Seconds of animation that had
+            # elapsed at trial start -- needed to know where a moving
+            # stimulus was at t=0 of the trial.
+            "stimulus_elapsed_at_trial_start":
+                _rt["stimulus_elapsed_at_trial_start"],
             "geometry": dict(_rt["geometry"]),
             "left": {
                 "name": _rt["left_name"],
