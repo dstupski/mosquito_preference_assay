@@ -2069,6 +2069,17 @@ so recordings are distinguishable.
 }
 ```
 
+> **`condition.name` does not tell you which side.** For an unordered pairing
+> it is the two names **sorted alphabetically** and joined with `|`, so the
+> same pairing gets the same label however the sides fell — which is what
+> makes it groupable across trials. `"jitter_small|static_black"` can be
+> `LEFT=jitter_small` on one trial and `LEFT=static_black` on the next.
+>
+> **For side, read `left.name` and `right.name`.** Only an *ordered* pairing
+> (written `{left: …, right: …}` in the experiment file) pins sides, and it
+> says so: the name becomes `"a->b"` and `ordered` is `true`.
+
+
 - **`left` / `right`** are the authoritative placement — `name` is the pool
   entry, `type` is the marker behavior (they differ when the YAML gives a
   custom name). `params` are all resolved concrete values.
