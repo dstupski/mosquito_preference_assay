@@ -1248,8 +1248,8 @@ timestamps, so they align on playback.
 1440×1080 feeds at 200 fps is ~620 MB/s: recording from launch would cost
 ~2.2 TB per hour of waiting for an animal, and buffering 15 s of it in RAM
 (what `--snapshot-mode` does) would need ~9.3 GB. So the video recorder is
-spawned at the trigger instead. **Budget ~9 GB per trial at 200 fps** — a
-measured 18 s test at 30 fps wrote 3.3 GB.
+spawned at the trigger instead. **Budget ~9 GB per trial at 200 fps** — an
+18.7 s test wrote 3.3 GB (2242 frames at 1.56 MB each, both cameras).
 
 The cost of starting at the trigger is **0.16 s** before the first frame lands
 (rosbag2 subscribing to an already-live topic) — about 30 frames at 200 fps.
