@@ -210,11 +210,22 @@ RUN=/data/mosquito/2026-09-28/trial_20260928_101500
 ros2 bag info $RUN/assay
 ros2 bag info $RUN/video
 
-# the single most useful message: which stimuli, which side, where on screen
-ros2 topic echo --from-bag $RUN/assay /stimulus_publisher/trial_start
+# WHICH STIMULUS WAS ON WHICH SIDE, plus what fired the trial:
+python3 ~/ros2_ws/src/mosquito_preference_assay/tools/read_trial.py $RUN
 
-# what fired the trial, and where in the frame
-ros2 topic echo --from-bag $RUN/assay /arena/mosquito_present
+#   trial 0  condition jitter_small|static_black
+#     LEFT   jitter_small     (jitter)
+#     RIGHT  static_black     (static_dark)
+#     duration 15.0 s   trial_seed 549819960
+#     centres  L[404.0, 400.0] R[799.0, 400.0]  diameter 196.0
+
+# machine-readable, for analysis scripts
+python3 ~/ros2_ws/src/mosquito_preference_assay/tools/read_trial.py $RUN --json
+
+# NOTE: `ros2 topic echo --from-bag` does NOT exist in Humble. To watch
+# these topics LIVE while a run is happening, use a third terminal:
+#     ros2 topic echo /stimulus_publisher/trial_start
+#     ros2 topic echo /arena/mosquito_present
 
 # both bags MUST contain metadata.yaml; without it playback refuses
 ls $RUN/assay/metadata.yaml $RUN/video/metadata.yaml

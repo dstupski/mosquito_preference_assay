@@ -2088,6 +2088,36 @@ so recordings are distinguishable.
 
 ---
 
+### Reading back what a run showed
+
+Which stimulus went left and which went right is decided at run time by the
+trial RNG, so it is not in any config file — it is in the bag, in the `left`
+and `right` objects of `trial_start`. To read it:
+
+```bash
+python3 tools/read_trial.py /data/mosquito/2026-09-28/trial_20260928_101500
+```
+
+```
+experiment : sippell_retest_experiment  (sha1 507ddec0b8bd)
+master_seed: 1282681166    start_mode: triggered
+
+trial 0  condition jitter_small|static_black
+  LEFT   jitter_small     (jitter)
+  RIGHT  static_black     (static_dark)
+  duration    15.0 s    trial_seed 549819960
+  stimuli had been playing 4.9 s when the trial started
+  centres     L[404.0, 400.0] R[799.0, 400.0]  diameter 196.0
+```
+
+`--json` dumps the raw objects for an analysis script. It reads the bag's
+SQLite store directly, so it needs no ROS environment — note that
+`ros2 topic echo --from-bag` does **not** exist in Humble; to watch these
+topics live during a run, `ros2 topic echo /stimulus_publisher/trial_start`
+in another terminal.
+
+---
+
 ## Reproducing a run offline
 
 `master_seed` (in `experiment_info`) replays the run — the draw, the sides,
