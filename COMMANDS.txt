@@ -1,0 +1,303 @@
+===============================================================================
+ mosquito_preference_assay -- copy-paste command sheet
+===============================================================================
+ Every block below is meant to be pasted straight into a terminal.
+ Lines starting with # are comments and are safe to paste along with the rest.
+
+ EVERY NEW TERMINAL needs this first:
+
+     source ~/ros2_ws/install/setup.bash
+
+ (on the rig PC the workspace is ~/mosquito_ros2_ws -- adjust the path)
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+ 0. FIRST TIME ON THIS MACHINE  (or after any git pull)
+-------------------------------------------------------------------------------
+
+cd ~/ros2_ws
+git -C src/mosquito_preference_assay pull
+colcon build --packages-select mosquito_preference_assay --symlink-install
+source install/setup.bash
+
+# --symlink-install is NOT optional. Without it colcon COPIES config/ and
+# experiments/ into install/, your *.local.yaml files are never found, and
+# edits you make in src/ silently do nothing. Verify -- you want to see
+# arrows (->) pointing into src/:
+
+ls -l install/mosquito_preference_assay/share/mosquito_preference_assay/config/
+
+# After RENAMING or DELETING a file, a plain rebuild is not enough (symlinks
+# are never removed, so stale names linger as dead links). Clean rebuild:
+
+rm -rf build/mosquito_preference_assay install/mosquito_preference_assay
+colcon build --packages-select mosquito_preference_assay --symlink-install
+source install/setup.bash
+
+
+-------------------------------------------------------------------------------
+ 1. ONE-TIME RIG SETUP  (repeat only if the projector or a camera moves)
+-------------------------------------------------------------------------------
+
+# --- 1a. make your own config, which git will never overwrite ---------------
+cd ~/ros2_ws/src/mosquito_preference_assay
+cp config/assay_params.yaml    config/assay_params.local.yaml
+cp config/detector_params.yaml config/detector_params.local.yaml
+
+# Then edit config/assay_params.local.yaml and set AT LEAST:
+#     monitor: "2"            <- quoted; a bare 2 is a parameter-type error
+#     fullscreen: true        <- monitor is IGNORED unless this is true
+#     stimuli_when_armed: true  <- if you want no stimulus onset (see 3b)
+
+
+# --- 1b. which display is the projector? ------------------------------------
+python3 ~/ros2_ws/src/mosquito_preference_assay/tools/list_displays.py --identify
+
+# Puts a big number on each physical screen in turn. Use THAT number --
+# Ubuntu's Displays panel numbers them differently.
+
+
+# --- 1c. place the stimulus circles on the projector ------------------------
+ros2 launch mosquito_preference_assay display_check.launch.py
+
+#   drag the midpoint .... move the pair
+#   drag a circle ........ change their separation
+#   [  ]  ................ resize both
+#   s  ................... SAVE   <- this is the whole handoff
+#   q  ................... quit
+#
+# `s` writes config/display_geometry.local.yaml, which every launch picks up
+# automatically. Nothing to copy anywhere.
+
+
+# --- 1d. draw the trigger zone on the live camera ---------------------------
+# The camera must already be publishing (see section 2).
+
+ros2 launch mosquito_preference_assay trigger_roi.launch.py
+ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1
+
+#   drag inside the box .. move the zone
+#   drag a corner ........ resize
+#   drag empty image ..... draw a new zone
+#   [  ]  ................ shrink / grow
+#   d  ................... detection overlay on/off (green = would fire)
+#   b  ................... re-capture the background frame
+#   s  ................... SAVE
+#   q  ................... quit
+#
+# `s` writes config/trigger_roi.local.yaml, including WHICH CAMERA the zone
+# was drawn on -- so doing this on cam0 is what points detection at cam0.
+
+
+-------------------------------------------------------------------------------
+ 2. START THE CAMERAS   (your own stereo package -- not part of this repo)
+-------------------------------------------------------------------------------
+
+# >>> REPLACE THIS LINE with your camera package's launch command <<<
+ros2 launch <your_camera_package> <your_camera_launch>.py
+
+# Confirm both feeds are live before running anything else. A launch against
+# silent cameras comes up armed and simply waits forever:
+
+ros2 topic hz /cam_sync/cam0/image_raw
+ros2 topic hz /cam_sync/cam1/image_raw
+
+
+-------------------------------------------------------------------------------
+ 3. RUN THE SIPPELL RETEST  <<< THE MAIN EVENT >>>
+-------------------------------------------------------------------------------
+
+ TERMINAL 1 -- cameras (section 2), left running.
+ TERMINAL 2 -- one animal, one trial, one run folder:
+
+source ~/ros2_ws/install/setup.bash
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    save_dir:=/data/mosquito/$(date +%F) \
+    stimuli_when_armed:=true
+
+# That is the whole run. It picks up your projector alignment, your trigger
+# zone, your monitor and your detection camera on its own -- everything
+# calibrated in section 1 is applied without being named here.
+#
+# It ends by itself: trial runs 15 s, the sketch exits, both bags close.
+# One launch = one animal = one run folder. Re-run it for the next animal.
+
+
+# --- 3a. what you should see -----------------------------------------------
+#   run folder      : /data/mosquito/2026-09-28/trial_20260928_101500
+#   trigger zone    : .../config/trigger_roi.local.yaml
+#   detection camera: /cam_sync/cam0/image_raw
+#   [assay] display 2: 1920x1080 ...              <- the projector
+#   [assay] ARMED -- stimuli are PLAYING; the trigger starts the recording window
+#   mosquito_detector: holding fire (assay phase=None)
+#   mosquito_detector: assay phase: armed
+#   mosquito_detector: mosquito_detected at (...)
+#   [assay] trial 0 START (stimuli already playing 7.9s)
+
+
+# --- 3b. without the always-on stimuli (circles appear at detection) --------
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    save_dir:=/data/mosquito/$(date +%F)
+
+
+# --- 3c. useful variations --------------------------------------------------
+
+# name the run folder after the animal
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    save_dir:=/data/mosquito/$(date +%F) run_name:=mosq07 \
+    stimuli_when_armed:=true
+
+# detect on the OTHER camera for one run
+    detection_camera:=cam1
+
+# no video (assay topics only -- small bags, quick tests)
+    record_video:=false
+
+# no recording at all (just watch it happen)
+    record:=false
+
+# reproduce an earlier run exactly (master_seed is printed in every run's log
+# and stored in the bag's experiment_info)
+    master_seed:=123456789
+
+# use a specific older calibration instead of the current one
+    display_config:=config/20260923_display_config.yaml
+    trigger_config:=config/20260924_trigger_roi.yaml
+
+
+-------------------------------------------------------------------------------
+ 4. REHEARSE WITH NO CAMERA AND NO MOSQUITO
+-------------------------------------------------------------------------------
+ Fires its own fake trigger. Use this to check the display before an animal.
+
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    experiment_file:=sippell_retest_experiment
+
+# stimuli playing the whole time, trigger 15 s in
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    stimuli_when_armed:=true delay_sec:=15.0
+
+# several trials back to back, new pairing each time
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    experiment_file:=sippell_retest_experiment repeat_sec:=20.0
+
+# display only, write nothing
+ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
+    experiment_file:=sippell_retest_experiment record:=false
+
+
+-------------------------------------------------------------------------------
+ 5. CHECK WHAT A RUN ACTUALLY RECORDED
+-------------------------------------------------------------------------------
+
+RUN=/data/mosquito/2026-09-28/trial_20260928_101500
+
+ros2 bag info $RUN/assay
+ros2 bag info $RUN/video
+
+# the single most useful message: which stimuli, which side, where on screen
+ros2 topic echo --from-bag $RUN/assay /stimulus_publisher/trial_start
+
+# what fired the trial, and where in the frame
+ros2 topic echo --from-bag $RUN/assay /arena/mosquito_present
+
+# both bags MUST contain metadata.yaml; without it playback refuses
+ls $RUN/assay/metadata.yaml $RUN/video/metadata.yaml
+
+
+-------------------------------------------------------------------------------
+ 6. OTHER EXPERIMENTS IN THIS REPO
+-------------------------------------------------------------------------------
+ Swap the name into experiment_file:= in any command above.
+
+ls ~/ros2_ws/src/mosquito_preference_assay/experiments/
+
+#   sippell_retest_experiment  4 conditions: blank, static dark, small jitter,
+#                              large jitter (the jitter pair is mirrored --
+#                              matched motion, not identical)
+#   ten_stimulus_panel         10 stimuli, white background
+#   two_choice_default         the built-in default
+#   control_vs_grating         simple two-condition control
+#   single_trigger             one 15 s trial, for testing the trigger path
+
+# look at a stimulus on its own, no ROS, no trial
+ros2 run mosquito_preference_assay preview --ros-args \
+    -p experiment_file:=sippell_retest_experiment
+
+
+-------------------------------------------------------------------------------
+ 7. WHEN SOMETHING IS WRONG
+-------------------------------------------------------------------------------
+
+# --- display opens on the wrong screen --------------------------------------
+# monitor is IGNORED unless fullscreen is true. Both must be set:
+grep -n "monitor\|fullscreen" ~/ros2_ws/src/mosquito_preference_assay/config/assay_params.local.yaml
+# The sketch prints where it actually landed -- trust this, not the config:
+#     [assay] display 2: 1920x1080 at +1920+0 (:0.1)
+
+
+# --- edits to a config file seem to do nothing ------------------------------
+# Almost always a copy build. Regular files instead of symlinks = broken:
+ls -l ~/ros2_ws/install/mosquito_preference_assay/share/mosquito_preference_assay/config/
+# Fix: the clean rebuild in section 0.
+
+
+# --- which files did the launch actually load? ------------------------------
+# Every launch prints this at startup. Read it before assuming anything:
+#     display calibration: .../config/display_geometry.local.yaml
+#     trigger zone       : .../config/trigger_roi.local.yaml
+#     detection camera   : /cam_sync/cam0/image_raw
+
+
+# --- "invalid YAML: mapping values are not allowed here" --------------------
+cd ~/ros2_ws/src/mosquito_preference_assay
+python3 - <<'PY'
+import glob, yaml
+for path in sorted(glob.glob("config/*.yaml") + glob.glob("experiments/*.yaml")):
+    try:
+        yaml.safe_load(open(path)); print(f"  ok   {path}")
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        print(f"  FAIL {path}\n       {getattr(e,'problem','')}")
+        if mark:
+            lines = open(path).read().splitlines()
+            for n in range(max(0, mark.line-2), min(len(lines), mark.line+2)):
+                print(f"       {'>>' if n==mark.line else '  '} {n+1:4d} | {lines[n]}")
+PY
+
+
+# --- it never triggers ------------------------------------------------------
+ros2 topic hz /cam_sync/cam0/image_raw      # camera actually publishing?
+ros2 topic echo /arena/mosquito_present     # detector firing at all?
+# "holding fire (assay phase=None)" is CORRECT during the first few seconds --
+# the detector waits for the display to finish booting so the animal's first
+# approach is not wasted.
+
+
+# --- it triggers on nothing -------------------------------------------------
+# The trigger zone is too big, or includes equipment. Redraw it (section 1d)
+# and watch the overlay: green = would fire, grey = seen and ignored.
+
+
+# --- stray processes from an earlier test still publishing ------------------
+ps -eo pid,etimes,args --no-headers | grep -E "video_publisher|bag record" | grep -v grep
+# then: kill -INT <pid>
+
+
+-------------------------------------------------------------------------------
+ 8. DISK
+-------------------------------------------------------------------------------
+ A trial at 200 fps writes roughly 9 GB of video. Check before a session:
+
+df -h /data
+du -sh /data/mosquito/*
+
+# Video is a SEPARATE bag inside each run folder, recorded only from the
+# trigger onward. To keep only the assay topics, add record_video:=false.
+
+===============================================================================

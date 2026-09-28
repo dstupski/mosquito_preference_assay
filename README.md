@@ -15,7 +15,8 @@ graphics; ROS 2 Humble for the plumbing.
 ## Contents
 
 **Start here** — [how it works](#how-it-works) · [install](#setup) ·
-[**setting up a rig, start to finish**](#setting-up-a-rig-start-to-finish)
+[**setting up a rig, start to finish**](#setting-up-a-rig-start-to-finish) ·
+[**COMMANDS.txt**](COMMANDS.txt) — copy-paste command sheet for the rig
 
 **Running the assay** — [setting up a new experiment](#setting-up-a-new-experiment-step-by-step) ·
 [writing an experiment](#writing-an-experiment) ·
