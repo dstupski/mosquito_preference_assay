@@ -93,8 +93,10 @@ Which command do you want? Most people need the first group only:
 |---|---|
 | see the stimuli, no ROS | `preview` |
 | check the display / align the circles | `display_check` |
+| draw the trigger zone on the camera | `trigger_roi` |
 | rehearse a trial, no camera | `trigger_display_test.launch.py` |
-| run an animal | `triggered_assay.launch.py` |
+| **run an animal** | **`arena_experiment.launch.py`** (two cameras) |
+| run an animal, single camera | `triggered_assay.launch.py` |
 | tune the detector | `mosquito_detector` + `detector.launch.py` |
 | everything else below | tracking and diagnostics — not needed to run the assay |
 
@@ -107,6 +109,7 @@ Which command do you want? Most people need the first group only:
 | `assay.py` | the py5 sketch, display selection, thread-safe `current_state()` |
 | `stimulus_publisher` | the ROS node that runs the sketch and publishes what is on screen |
 | `display_check` | test pattern on the configured display, drag-to-align |
+| `trial_recorder` | starts the video bag when the trigger fires, closes it at shutdown |
 | `test_trigger` | bench helper: fire the trigger by hand |
 | `snapshot_supervisor` | flushes a `--snapshot-mode` bag at trial start / end |
 
@@ -116,6 +119,7 @@ Which command do you want? Most people need the first group only:
 |---|---|
 | `detection.py` | background-subtraction blob detection (ported from test_videos_particle_tracking) |
 | `mosquito_detector` | watches a feed, publishes detection events — the trigger |
+| `trigger_roi` | draw the detector's trigger zone on the live feed, drag-to-place |
 | `tracker` | real-time 2D tracking, **one instance per camera** |
 | `stereo_sync` | pairs two `tracker` outputs by timestamp |
 | `triangulator` | a stereo pair → a real 3D position in mm, via the rig calibration |
@@ -135,9 +139,13 @@ Which command do you want? Most people need the first group only:
 experiments/    two_choice_default · control_vs_grating · single_trigger
                 ten_stimulus_panel · sippell_retest_experiment
 config/         assay_params.yaml (the assay) · detector_params.yaml (the detector)
-launch/         assay · detector · display_check · trigger_display_test
-                triggered_assay (the rig workflow) · tracking_benchmark
+                *.local.yaml, display_geometry.local.yaml, trigger_roi.local.yaml
+                are yours: gitignored, and preferred automatically
+launch/         arena_experiment (THE RIG RUN) · trigger_roi · display_check
+                trigger_display_test · triggered_assay · assay · detector
+                tracking_benchmark
 tools/          list_displays
+COMMANDS.txt    copy-paste command sheet for running at the rig
 test/           unit + lint tests
 ```
 
