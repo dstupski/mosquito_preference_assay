@@ -71,6 +71,20 @@
     # contour detection.
     morph_kernel: 3
 
+    # Which DIRECTION of change counts as a mosquito.
+    #
+    #   darker    only pixels darker than the background -- a dark animal on
+    #             a bright arena. THE DEFAULT, and the one that cuts false
+    #             triggers: a reflection, an indicator LED, light spilling
+    #             from the projector and most lighting flicker all make
+    #             pixels BRIGHTER, and none of them can trigger any more.
+    #   brighter  the inverse -- a pale animal against a dark ground.
+    #   any       either direction. What the detector used to do.
+    #
+    # If the animal is dark on a bright ground, leave this alone. Switching
+    # to "any" roughly doubles what can fire the trigger.
+    polarity: "darker"
+
     # --- firing ------------------------------------------------- #
     # Frames in a row that must have a qualifying blob before an event fires
     # (debounces single-frame noise).

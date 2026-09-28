@@ -112,6 +112,8 @@ class TriggerRoiNode(Node):
         self.min_area = float(self.declare_parameter("min_area_px", 4.0).value)
         self.max_area = float(self.declare_parameter("max_area_px", 5000.0).value)
         self.morph_kernel = int(self.declare_parameter("morph_kernel", 3).value)
+        self.polarity = str(
+            self.declare_parameter("polarity", "darker").value).strip()
 
         # Fit a 1440x1080 feed on a laptop screen without the user resizing.
         self.max_display_px = int(self.declare_parameter("max_display_px", 1100).value)
@@ -252,7 +254,8 @@ def _draw(node, drag):
             for blob in find_candidates(
                     node.gray, node.background, diff_threshold=node.diff_threshold,
                     min_area=node.min_area, max_area=node.max_area,
-                    morph_kernel=node.morph_kernel, roi=None):
+                    morph_kernel=node.morph_kernel, roi=None,
+                    polarity=node.polarity):
                 bx, by, bw, bh = blob["bbox"]
                 hit = (roi is not None and roi[0] <= blob["cx"] < roi[2]
                        and roi[1] <= blob["cy"] < roi[3])
@@ -277,7 +280,8 @@ def _draw(node, drag):
 
     h, w = node.gray.shape[:2]
     lines = [
-        f"{node.image_topic}   {w}x{h}   frames {node.frames_seen}",
+        f"{node.image_topic}   {w}x{h}   frames {node.frames_seen}"
+        f"   polarity={node.polarity}",
         (f"zone {roi[0]},{roi[1]} -> {roi[2]},{roi[3]}"
          f"   ({roi[2] - roi[0]}x{roi[3] - roi[1]} px)" if roi else "no zone"),
         f"blobs: {inside} inside (would fire), {outside} outside (ignored)"

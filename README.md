@@ -1407,9 +1407,15 @@ Setting it is part of commissioning a rig, not an optimisation.
 onto the arena. It is the `display_check` of the camera side.
 
 ```bash
-ros2 launch mosquito_preference_assay trigger_roi.launch.py
-ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1
+ros2 launch mosquito_preference_assay trigger_roi.launch.py             # the configured camera
+ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1  # just this session
 ```
+
+To change which camera it opens on **permanently**, set `image_topic` in
+`config/detector_params.local.yaml` — the same file that tells the real
+detector which feed to watch, so the tool and the experiment cannot disagree.
+Once you have saved a zone, that file carries the camera too and the tool
+reopens on it.
 
 | | |
 |---|---|
@@ -1466,6 +1472,22 @@ the equipment stand and its indicator lights in the bottom-left, which
 otherwise capture the largest-blob heuristic. They are a reasonable first
 guess for a similar framing, but they are *that* rig's numbers: re-derive
 after any camera move.
+
+**Cutting false triggers: `polarity`.** The detector defaults to
+`polarity: "darker"` — only pixels that get *darker* than the background count.
+A dark mosquito on a bright arena qualifies; a reflection, an indicator LED,
+light spilling from the projector and most lighting flicker do not, because
+they make pixels **brighter**. That removes roughly half the surface a false
+trigger can come from, for nothing.
+
+| | |
+|---|---|
+| `darker` | **default** — dark animal on a bright ground |
+| `brighter` | pale animal on a dark ground |
+| `any` | either direction; what it did before |
+
+Set it in `config/detector_params.local.yaml`. The zone tool reads the same
+file, so its green/grey overlay always matches what the detector would do.
 
 **Related knobs in the same file:** `consecutive_frames` (3) is how many
 frames in a row must contain a blob before it counts, which suppresses

@@ -28,6 +28,10 @@ config/detector_params.yaml. In brief:
     topic       (str)   detection-event output (std_msgs/String JSON)
     roi         (str)   "x0,y0,x1,y1" px box, exclusive; "" = whole frame
     diff_threshold (int), min_area_px / max_area_px (double), morph_kernel (int)
+    polarity    (str)   darker | brighter | any -- which direction of change
+                        counts. "darker" ignores anything that gets BRIGHTER
+                        than the background, so reflections and stray light
+                        cannot trigger.
     consecutive_frames (int), cooldown_sec (double)
     arm_topic   (str)   the assay's stimulus_state; fire only while it is
                         armed. "" = fire whenever a mosquito is seen.
@@ -77,6 +81,8 @@ class MosquitoDetector(Node):
         self._min_area = float(self.declare_parameter("min_area_px", 4.0).value)
         self._max_area = float(self.declare_parameter("max_area_px", 5000.0).value)
         self._morph_kernel = int(self.declare_parameter("morph_kernel", 3).value)
+        self._polarity = str(
+            self.declare_parameter("polarity", "darker").value).strip()
         self._consecutive_needed = max(
             1, int(self.declare_parameter("consecutive_frames", 3).value))
         self._cooldown_sec = float(self.declare_parameter("cooldown_sec", 10.0).value)
@@ -121,6 +127,7 @@ class MosquitoDetector(Node):
 
         self.get_logger().info(
             f"watching '{self._image_topic}' (qos={image_qos_kind}), roi={self._roi}, "
+            f"polarity={self._polarity}, "
             f"publishing detections to '{out_topic}'"
             + (f"; holding fire until '{self._arm_topic}' reports armed"
                if self._arm_topic else "")
@@ -159,6 +166,7 @@ class MosquitoDetector(Node):
             gray, self._background,
             diff_threshold=self._diff_threshold, min_area=self._min_area,
             max_area=self._max_area, morph_kernel=self._morph_kernel, roi=self._roi,
+            polarity=self._polarity,
         )
         best = candidates[0] if candidates else None
 

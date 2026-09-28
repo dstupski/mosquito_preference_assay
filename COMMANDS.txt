@@ -45,6 +45,11 @@ cd ~/ros2_ws/src/mosquito_preference_assay
 cp config/assay_params.yaml    config/assay_params.local.yaml
 cp config/detector_params.yaml config/detector_params.local.yaml
 
+# In config/detector_params.local.yaml, the two that matter most:
+#     image_topic: "/cam_sync/cam0/image_raw"   <- which camera detects
+#     polarity: "darker"                        <- only DARK objects fire,
+#                                                  so reflections/LEDs cannot
+#
 # Then edit config/assay_params.local.yaml and set AT LEAST:
 #     monitor: "2"            <- quoted; a bare 2 is a parameter-type error
 #     fullscreen: true        <- monitor is IGNORED unless this is true
@@ -74,8 +79,13 @@ ros2 launch mosquito_preference_assay display_check.launch.py
 # --- 1d. draw the trigger zone on the live camera ---------------------------
 # The camera must already be publishing (see section 2).
 
-ros2 launch mosquito_preference_assay trigger_roi.launch.py
-ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1
+ros2 launch mosquito_preference_assay trigger_roi.launch.py               # configured camera
+ros2 launch mosquito_preference_assay trigger_roi.launch.py camera:=cam1  # this session only
+
+# To change the camera PERMANENTLY, edit config/detector_params.local.yaml:
+#     image_topic: "/cam_sync/cam1/image_raw"
+# That same file is what the real detector reads, so the tool and the
+# experiment can never end up pointed at different cameras.
 
 #   drag inside the box .. move the zone
 #   drag a corner ........ resize

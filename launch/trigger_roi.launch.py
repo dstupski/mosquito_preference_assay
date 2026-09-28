@@ -2,8 +2,13 @@
 
     ros2 launch mosquito_preference_assay trigger_roi.launch.py
 
-The camera must already be publishing -- this starts no camera. By default it
-watches cam0; point it at the other one with `camera:=cam1`.
+The camera must already be publishing -- this starts no camera.
+
+WHICH CAMERA: `camera:=cam1` for one session. To make it permanent, set
+image_topic in config/detector_params.local.yaml -- the same file that
+tells the real detector which feed to watch, so the tool and the
+experiment cannot disagree. Once a zone has been saved, that file carries
+the camera too and the tool reopens on it.
 
 Drag the box over the part of the arena where the animal should start a trial,
 press `s`, and you are done: it writes config/trigger_roi.local.yaml, which
@@ -19,7 +24,8 @@ parameters, so a blob boxed green here is one that would fire a trial.
     out_file:=none        live file only, no archive
 
 Arguments
-    camera           cam0        cam0 | cam1 | an explicit topic name
+    camera           ""          unset = whatever the saved zone file or
+                                 detector_params says. cam0 | cam1 | a topic
     cam0_topic       /cam_sync/cam0/image_raw
     cam1_topic       /cam_sync/cam1/image_raw
     image_qos        sensor_data  real camera drivers are best-effort
@@ -51,26 +57,36 @@ def generate_launch_description():
             return LaunchConfiguration(name).perform(context).strip()
 
         cam0, cam1 = arg("cam0_topic"), arg("cam1_topic")
-        chosen = arg("camera") or "cam0"
+        # Unset leaves the params file authoritative, the same rule every
+        # other launch file here follows. Overriding unconditionally would
+        # mean image_topic in detector_params.local.yaml -- or in a zone
+        # file already saved against cam1 -- could never take effect, and
+        # the tool would silently reopen on cam0 every time.
+        chosen = arg("camera")
         image_topic = {"cam0": cam0, "cam1": cam1}.get(chosen, chosen)
+        if chosen and not image_topic:
+            raise RuntimeError(
+                f"camera={chosen!r} is not cam0, cam1, or a topic name")
 
         # Start from the zone already saved, so a second session adjusts the
         # existing box instead of silently starting over.
         existing = resolve_trigger_config(arg("trigger_config"))
 
         overrides = {
-            "image_topic": image_topic,
             "image_qos": arg("image_qos") or "sensor_data",
             "save_dir": arg("save_dir"),
             "live_file": arg("live_file"),
             "out_file": arg("out_file"),
             "max_display_px": int(arg("max_display_px") or 1100),
         }
+        if image_topic:
+            overrides["image_topic"] = image_topic
 
         return [
             LogInfo(msg=(
                 f"trigger zone editor\n"
-                f"  camera        : {chosen} -> {image_topic}\n"
+                f"  camera        : "
+                f"{image_topic or 'from the zone file / detector_params'}\n"
                 f"  starting from : {existing or 'a fresh centred box'}\n"
                 f"  detector knobs: {arg('params_file')}")),
             Node(package="mosquito_preference_assay", executable="trigger_roi",
@@ -84,7 +100,7 @@ def generate_launch_description():
         ]
 
     return LaunchDescription([
-        DeclareLaunchArgument("camera", default_value="cam0"),
+        DeclareLaunchArgument("camera", default_value=""),
         DeclareLaunchArgument("cam0_topic", default_value=DEFAULT_CAM0),
         DeclareLaunchArgument("cam1_topic", default_value=DEFAULT_CAM1),
         DeclareLaunchArgument("image_qos", default_value="sensor_data"),

@@ -15,8 +15,12 @@ mosquito_detector_node.py stands in for that.
 import cv2
 
 
+POLARITIES = ("any", "darker", "brighter")
+
+
 def find_candidates(
-    gray, background, *, diff_threshold, min_area, max_area, morph_kernel, roi=None,
+    gray, background, *, diff_threshold, min_area, max_area, morph_kernel,
+    roi=None, polarity="any",
 ):
     """Return every foreground blob with area in [min_area, max_area], largest
     first, as dicts {cx, cy, area, bbox} (bbox = (x, y, w, h)).
@@ -24,7 +28,23 @@ def find_candidates(
     gray, background: single-channel (grayscale) images, same shape.
     roi: optional [x0, y0, x1, y1] pixel box (x1/y1 exclusive, full-frame
     coords); pixels outside it are ignored.
+
+    polarity: which direction of change counts as foreground.
+
+        "any"       either direction (|gray - background|)
+        "darker"    only pixels DARKER than the background -- a dark animal
+                    on a bright arena. Halves the false-positive surface:
+                    a reflection, an indicator LED, or light spilling from
+                    the projector makes pixels BRIGHTER, and none of those
+                    can trigger any more.
+        "brighter"  the inverse, for a pale animal on a dark ground.
+
+    Both directional modes use a saturating subtract, so the unwanted
+    direction clamps to 0 and cannot reach the threshold.
     """
+    if polarity not in POLARITIES:
+        raise ValueError(
+            f"polarity {polarity!r} must be one of {POLARITIES}")
     if gray.shape != background.shape:
         raise ValueError(f"frame shape {gray.shape} != background shape {background.shape}")
 
@@ -44,7 +64,14 @@ def find_candidates(
         background = background[y0:y1, x0:x1]
         x_offset, y_offset = x0, y0
 
-    diff = cv2.absdiff(gray, background)
+    if polarity == "darker":
+        # saturating subtract: anything brighter than the background
+        # clamps to 0 rather than wrapping around
+        diff = cv2.subtract(background, gray)
+    elif polarity == "brighter":
+        diff = cv2.subtract(gray, background)
+    else:
+        diff = cv2.absdiff(gray, background)
     _, mask = cv2.threshold(diff, diff_threshold, 255, cv2.THRESH_BINARY)
 
     if morph_kernel > 1:
