@@ -93,7 +93,11 @@
     # neutral idle state. The video bag still closes at the end of the
     # trial; Ctrl-C when you are ready for the next animal, which closes
     # the rest cleanly.
-    hold_after_trial: false
+    #
+    # TRUE BY DEFAULT, which means A RUN NO LONGER ENDS ON ITS OWN -- the
+    # window stays up until you Ctrl-C. Set false if you want the launch to
+    # terminate by itself after the trial.
+    hold_after_trial: true
     # override which node/topic fires the trial.
     trigger_topic: ""
     # "" -> use the experiment's `trigger.msg_type` (or "bool").

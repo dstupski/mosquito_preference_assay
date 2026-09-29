@@ -106,7 +106,16 @@ class MosquitoDetector(Node):
         self._consecutive = 0
         self._last_fire_monotonic = None
 
-        self._pub = self.create_publisher(String, out_topic, 10)
+        # LATCHED. The bags now start AT the trigger, so a volatile event
+        # would be published 0.16 s before the recorder exists and would
+        # never appear in its own bag -- verified: a late recorder keeps a
+        # retained TRANSIENT_LOCAL message and loses a volatile one.
+        # Depth 1 is enough: one launch, one animal, one detection.
+        self._pub = self.create_publisher(
+            String, out_topic,
+            QoSProfile(depth=1,
+                       reliability=QoSReliabilityPolicy.RELIABLE,
+                       durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
         self._debug_pub = (
             self.create_publisher(Image, "~/debug_image", 1) if publish_debug else None
         )
@@ -220,7 +229,11 @@ class MosquitoDetector(Node):
         msg.data = json.dumps(event, separators=(",", ":"))
         self._pub.publish(msg)
         self.get_logger().info(
-            f"mosquito_detected at ({blob['cx']:.0f},{blob['cy']:.0f}) area={blob['area']:.0f}"
+            "=" * 58 + "\n"
+            f"  MOSQUITO DETECTED  at ({blob['cx']:.0f}, {blob['cy']:.0f}) px"
+            f"   area {blob['area']:.0f} px\n"
+            f"  camera {self._image_topic}   zone {self._roi}\n"
+            + "=" * 58
         )
 
     def _publish_debug(self, gray, best):

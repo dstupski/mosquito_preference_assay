@@ -21,8 +21,11 @@ cameras comes up armed and simply never triggers.
 Two bags, one run folder:
 
     <save_dir>/<run_name>_<timestamp>/
-        assay/   everything but the video -- up from launch, no gap
-        video/   the camera feeds -- starts at the trigger
+        assay/   everything but the camera feeds
+        video/   the camera feeds
+
+Both start AT THE TRIGGER and close when the trial ends -- nothing is
+written while armed, and nothing after the trial.
 
 Video is recorded separately and only after the trigger because it cannot be
 treated like the other topics: two 1440x1080 feeds at 200 fps is ~620 MB/s, so
@@ -76,7 +79,6 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
-    ExecuteProcess,
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
@@ -86,6 +88,7 @@ from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.actions import Node
 
 from mosquito_preference_assay.config_paths import (
@@ -228,24 +231,26 @@ def generate_launch_description():
                             detector_overrides])])
 
         # --- recording ----------------------------------------------------- #
-        # Everything except the video, from launch: cheap while armed, and no
-        # discovery race at the trigger.
+        # BOTH bags start at the trigger and close when the trial ends, so
+        # nothing is written while armed and nothing after the trial -- which
+        # is what makes hold_after_trial safe. Everything published before the
+        # recorders exist is latched, so none of it is lost to the ~0.16 s
+        # rosbag2 takes to subscribe.
         exclude = "|".join(t for t in video_topics) or "^$"
-        assay_recorder = ExecuteProcess(
-            condition=IfCondition(recording),
-            cmd=["ros2", "bag", "record", "-o", assay_bag, "-a", "-x", exclude],
-            output="screen")
-
-        # The video: spawned by this node when the trigger fires.
-        video_recorder = Node(
+        want_video = PythonExpression(
+            ["'", LaunchConfiguration("record_video"), "'.lower() == 'true'"])
+        recorder = Node(
             package="mosquito_preference_assay", executable="trial_recorder",
             name="trial_recorder", output="screen",
-            condition=IfCondition(PythonExpression(
-                [recording, " and '", LaunchConfiguration("record_video"),
-                 "'.lower() == 'true'"])),
+            condition=IfCondition(recording),
             parameters=[{"trigger_topic": trigger_topic,
                          "trigger_msg_type": "string",
-                         "bag_dir": video_bag,
+                         "assay_bag_dir": assay_bag,
+                         "assay_exclude": exclude,
+                         "bag_dir": ParameterValue(
+                             PythonExpression(
+                                 ["'", video_bag, "' if ", want_video, " else ''"]),
+                             value_type=str),
                          "video_topics": video_topics}])
 
         # The sketch exiting is what ends the run: it closes both bags. Target
@@ -257,7 +262,7 @@ def generate_launch_description():
 
         # Give the recorder a moment to finish discovery before the sketch
         # publishes its latched experiment_info.
-        return notes + [assay_recorder, video_recorder,
+        return notes + [recorder,
                         TimerAction(period=2.0, actions=[sketch, finish]),
                         detector]
 

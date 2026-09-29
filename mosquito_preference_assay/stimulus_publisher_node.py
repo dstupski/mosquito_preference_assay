@@ -27,9 +27,11 @@ the `experiment_file` parameter. The rest of the parameters are operational:
 
     experiment_file     string  ""    experiment name / path; "" -> built-in default
     start_mode          string  ""    "" -> derive from the experiment's `trigger:` block
-    hold_after_trial    bool    False  when the trial ends, clear the stimuli but
+    hold_after_trial    bool    True   when the trial ends, clear the stimuli but
                         KEEP the window up showing the background, instead of
                         exiting. Stops the projector going dark between animals.
+                        NOTE: the run then ends on Ctrl-C, not on its own.
+                        Set false for a run that terminates by itself.
     stimuli_when_armed  bool    False  draw the stimuli while ARMED, so the
                         trigger opens the recording window instead of making
                         the stimuli appear (no onset transient to startle the
@@ -251,7 +253,7 @@ class StimulusPublisher(Node):
         # arena, letting it go dark between animals changes the light
         # environment -- which is a variable, not a neutral idle state.
         self._hold_after_trial = bool(
-            self.declare_parameter("hold_after_trial", False).value)
+            self.declare_parameter("hold_after_trial", True).value)
         self._held_note = False
         self._watchdog = self.create_timer(0.25, self._check_sketch)
 

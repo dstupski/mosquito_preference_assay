@@ -162,15 +162,16 @@ ros2 topic echo /stimulus_publisher/trial_start        # once, at trial start
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3c. keep the projector lit between animals -----------------------------
-# Stimuli vanish when the trial ends, but the background stays up, so the
-# arena's light does not change. Ctrl-C when ready -- that closes the bags.
-# (The VIDEO bag closes by itself at the end of the trial either way.)
-
-ros2 launch mosquito_preference_assay arena_experiment.launch.py \
-    experiment_file:=sippell_retest_experiment \
-    save_dir:=/data/mosquito/$(date +%F) \
-    stimuli_when_armed:=true hold_after_trial:=true
+# --- 3c. how a run begins and ends ------------------------------------------
+# Recording starts AT THE TRIGGER -- nothing is written while waiting for an
+# animal. BOTH bags close when the trial ends, automatically.
+#
+# The display then STAYS UP showing the background (hold_after_trial, on by
+# default), so the arena's light does not change between animals. Nothing is
+# recorded during that time. Ctrl-C when you are ready for the next animal.
+#
+# For a run that terminates by itself instead, add:
+#     hold_after_trial:=false
 
 
 # --- 3d. without the always-on stimuli (circles appear at detection) --------

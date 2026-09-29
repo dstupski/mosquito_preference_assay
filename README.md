@@ -1146,10 +1146,12 @@ every time a trial ends — a variable, not a neutral idle state.
 `hold_after_trial` clears the stimuli at the end of the trial but leaves the
 background on screen:
 
+This is **on by default**. To get a run that terminates by itself instead:
+
 ```yaml
 /**:
   ros__parameters:
-    hold_after_trial: true
+    hold_after_trial: false
 ```
 
 ```
@@ -1162,14 +1164,14 @@ Pair it with `stimuli_when_armed: true` and the projector output is constant
 for the whole session apart from the stimuli themselves appearing and
 disappearing at defined moments.
 
-**The video bag still closes at the end of the trial**, not when you
-Ctrl-C — `trial_recorder` watches for `phase: complete` and stops there, so
-holding the display does not record an empty arena for however long you take.
-The assay bag stays open until you exit, which costs almost nothing.
+**Both bags still close at the end of the trial**, not when you Ctrl-C.
+`trial_recorder` watches for `phase: complete` and stops both there, so
+holding the display records nothing at all — however long you take between
+animals.
 
-This changes how a run ends: `Ctrl-C` becomes the step that finishes it, and
-it closes both bags cleanly through the same shutdown path. One launch is
-still one animal.
+What this changes is how a run *ends*: Ctrl-C becomes the step that finishes
+it. The data is already safely closed by then. One launch is still one
+animal.
 
 ### Detector-armed capture — the rig workflow
 
@@ -1260,15 +1262,16 @@ ros2 topic hz /cam_sync/cam0/image_raw
 ### What happens
 
 ```
-launch ──> recorder up, writing every topic EXCEPT the camera feeds
-      ├──> stimulus_publisher opens on the projector and sits ARMED
-      └──> mosquito_detector watches the trigger zone, HOLDING FIRE
+launch ──> stimulus_publisher opens on the projector and sits ARMED
+      ├──> mosquito_detector watches the trigger zone, HOLDING FIRE
+      └──> trial_recorder armed -- NOTHING is being recorded yet
                     │
    sketch reports armed ──> detector goes live
                     │
-   mosquito detected ──> stimuli appear (that same message is the trigger)
-                    ├──> a second bag starts, for the video
-        duration ───> trial ends ──> sketch exits ──> both bags finalized
+   mosquito detected ──> BOTH bags start recording here
+                    │
+        duration ───> trial ends ──> both bags closed and finalized
+                                     display stays up, still recording nothing
 ```
 
 ### Where it saves
@@ -1278,9 +1281,13 @@ launch ──> recorder up, writing every topic EXCEPT the camera feeds
 ```
 /data/mosquito/2026-09-25/
     trial_20260925_094717/
-        assay/    everything but the video — up from launch, no gap
-        video/    the two camera feeds — starts at the trigger
+        assay/    everything except the camera feeds
+        video/    the two camera feeds
 ```
+
+**Both bags start at the trigger and close when the trial ends.** Nothing is
+written while the rig waits for an animal, and nothing after the trial — which
+is what lets the display stay up between animals without either bag growing.
 
 `run_name:=blackfly_m3` changes the prefix. Both bags carry the same
 timestamps, so they align on playback.
@@ -1292,11 +1299,17 @@ timestamps, so they align on playback.
 spawned at the trigger instead. **Budget ~9 GB per trial at 200 fps** — an
 18.7 s test wrote 3.3 GB (2242 frames at 1.56 MB each, both cameras).
 
-The cost of starting at the trigger is **0.16 s** before the first frame lands
-(rosbag2 subscribing to an already-live topic) — about 30 frames at 200 fps.
-The assay topics have no such gap: the detection event, the stimulus
-definitions and the trial timing come from the recorder that has been up since
-launch.
+Starting at the trigger costs **0.16 s** before the first frame lands —
+rosbag2 has to discover and subscribe to topics that are already publishing,
+about 30 frames at 200 fps.
+
+**Nothing is lost to that gap**, because everything published before it is
+latched (`TRANSIENT_LOCAL`): `experiment_info`, `stimulus_state`,
+`trial_start`, and the detection event itself. Verified directly — a recorder
+started *after* a latched message was published still records it, where a
+volatile message published at the same instant is lost entirely. That is why
+`mosquito_detector` publishes its event latched; change that and the message
+which fired the trial stops appearing in its own bag.
 
 ### The detector holds fire until the display is armed
 
