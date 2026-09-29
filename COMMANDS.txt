@@ -135,7 +135,22 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 # One launch = one animal = one run folder. Re-run it for the next animal.
 
 
-# --- 3a. what you should see -----------------------------------------------
+# --- 3a. VERIFY BY EYE which stimulus is on which side ----------------------
+# In a spare terminal, while the run is up. With stimuli_when_armed: true the
+# sides are known while still ARMED, so you can stand at the arena and check
+# the projection before an animal is introduced.
+
+python3 ~/ros2_ws/src/mosquito_preference_assay/tools/watch_stimuli.py
+
+#   armed     LEFT=blank   RIGHT=telescope_inward
+#   running   LEFT=blank   RIGHT=telescope_inward   trial_seed=2873312514
+
+# The raw topic, if you would rather read the JSON yourself:
+ros2 topic echo /stimulus_publisher/stimulus_state     # continuous, 10 Hz
+ros2 topic echo /stimulus_publisher/trial_start        # once, at trial start
+
+
+# --- 3b. what you should see -----------------------------------------------
 #   run folder      : /data/mosquito/2026-09-28/trial_20260928_101500
 #   trigger zone    : .../config/trigger_roi.local.yaml
 #   detection camera: /cam_sync/cam0/image_raw
@@ -147,13 +162,13 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3b. without the always-on stimuli (circles appear at detection) --------
+# --- 3c. without the always-on stimuli (circles appear at detection) --------
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
     save_dir:=/data/mosquito/$(date +%F)
 
 
-# --- 3c. useful variations --------------------------------------------------
+# --- 3d. useful variations --------------------------------------------------
 
 # name the run folder after the animal
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
@@ -238,9 +253,9 @@ ls $RUN/assay/metadata.yaml $RUN/video/metadata.yaml
 
 ls ~/ros2_ws/src/mosquito_preference_assay/experiments/
 
-#   sippell_retest_experiment  4 conditions: blank, static dark, small jitter,
-#                              large jitter (the jitter pair is mirrored --
-#                              matched motion, not identical)
+#   sippell_retest_experiment  4 conditions: blank, static dark, large jitter
+#                              (target moves), telescope_inward (target still,
+#                              rings contract)
 #   ten_stimulus_panel         10 stimuli, white background
 #   two_choice_default         the built-in default
 #   control_vs_grating         simple two-condition control

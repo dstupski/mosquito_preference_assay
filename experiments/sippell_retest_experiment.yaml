@@ -1,35 +1,49 @@
-# Does a wandering target attract more than a still one, and does wandering
-# FURTHER attract more still?
+# Which kind of motion attracts -- wandering, or receding?
 #
 # Four stimuli, so six possible pairings. mode: sample draws two distinct ones
 # per trial, so across enough animals every pairing is sampled:
 #
-#     blank         nothing at all          -- is anything better than nothing?
-#     static_black  a still dark circle     -- is motion doing the work, or is
-#                                              a dark target enough?
-#     jitter_small  wanders +/-30 px        -- the manipulation
-#     jitter_large  wanders +/-80 px        -- the same, 2.7x further
+#     blank             nothing at all       -- is anything better than nothing?
+#     static_black      a still dark circle  -- is motion doing the work, or is
+#                                               a dark target enough?
+#     jitter_large      wanders +/-80 px     -- motion of position: the object
+#                                               stays the same, and moves
+#     telescope_inward  rings contract       -- motion of pattern: the object
+#                                               stays put, and its surface
+#                                               streams inward
 #
-# The jitter pair is the comparison this file exists for, so it is a
-# ONE-VARIABLE manipulation: identical fill and noise_speed, and identical
-# seed_x/seed_y so both trace the same underlying path, differing in amplitude
-# alone. Without the pinned seeds they wander independently, and a few seconds
-# of Perlin noise does not reliably show the larger one as larger -- measured
-# 1.57x spread for a 2x amplitude, and near-identical in y. Pinned, the
-# excursion ratio is exactly 80/30 on every axis.
+# The two motion stimuli are the comparison this file exists for, and they are
+# deliberately different KINDS of motion rather than two amounts of one kind.
+# jitter moves the whole target while its appearance is constant;
+# telescope_inward holds the target still while its interior moves. Against
+# static_black, each asks a different question about what the animal is
+# responding to.
 #
-# jitter_large is additionally MIRRORED in both axes. Sharing seeds without
-# mirroring makes the two move in perfect lockstep when they appear together,
-# which reads as one object seen twice rather than two things to choose
-# between. Mirrored, they stay matched in speed, excursion and timing while
-# moving independently.
+# TWO HONEST CONFOUNDS, stated because the pairing cannot remove them:
+#
+#   * Mean luminance differs. static_black and jitter_large are solid dark;
+#     telescope_inward alternates dark and light rings, so roughly half its
+#     area is bright at any instant. A preference for or against it may be a
+#     preference about contrast or mean brightness, not about motion.
+#   * Only telescope_inward has internal structure. Nothing else here has a
+#     pattern inside the circle at all.
+#
+#   Neither is fatal -- they are the price of comparing a patterned stimulus
+#   with a solid one -- but a result involving telescope_inward cannot be read
+#   as "motion type" alone.
+#
+# jitter_large keeps pinned seeds so every animal sees the SAME wander rather
+# than a fresh random one, which takes a nuisance variable out of the
+# comparison. It no longer needs mirroring: mirroring existed only to stop two
+# seed-sharing jitters from moving in lockstep when drawn side by side, and
+# there is now only one jitter in the file.
 #
 # ---------------------------------------------------------------------------
 # RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
 # same file runs on any rig and two rigs running it show the same thing.
 # Which screen, and where on it, comes from your assay params instead:
 #
-#     ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+#     ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 #         experiment_file:=sippell_retest_experiment
 #
 # The rig's half lives in config/assay_params.local.yaml (copied from
@@ -41,8 +55,8 @@
 schema: mosquito_preference_assay/experiment/1
 name: sippell_retest_experiment
 description: >-
-  Blank and static-dark controls against two jitter amplitudes that trace the
-  same path, to separate "is it moving" from "how far is it moving".
+  Blank and static-dark controls against two kinds of motion -- a target that
+  wanders, and a target that stays put while its rings contract inward.
 
 stimuli:
   # 1. empty side -- the floor of the assay
@@ -54,33 +68,37 @@ stimuli:
     type: static_dark
     params: {fill_gray: 20}
 
-  # 3. the smaller wander
-  jitter_small:
-    type: jitter
-    params:
-      fill_gray: 20
-      amplitude_px: 30
-      noise_speed: 1.2
-      # pinned, and identical in jitter_large -- see the header
-      seed_x: 111.0
-      seed_y: 777.0
-
-  # 4. the same path, 2.7x further from centre at every instant
+  # 3. motion of POSITION: a solid target that wanders
   jitter_large:
     type: jitter
     params:
       fill_gray: 20
       amplitude_px: 80
       noise_speed: 1.2
+      # Pinned so the wander is identical for every animal, rather than a
+      # fresh Perlin path each trial. One less thing varying between trials.
       seed_x: 111.0
       seed_y: 777.0
-      # Same seeds as jitter_small, so the same underlying path -- but
-      # MIRRORED, so when the two are drawn side by side they are matched in
-      # speed, excursion and timing without moving in lockstep. Unmirrored
-      # they track each other exactly, which reads as one object rather than
-      # two, and is a strange thing to ask an animal to choose between.
-      mirror_x: true
-      mirror_y: true
+
+  # 4. motion of PATTERN: a target that stays put while its rings contract
+  telescope_inward:
+    type: telescope
+    params:
+      # NEGATIVE speed is what makes it telescope INWARD -- rings contract
+      # toward the centre, reading as receding. Positive would expand outward,
+      # which looms and is a different stimulus entirely.
+      speed_px_per_sec: -60.0
+
+      # 20 px spacing across a 220 px circle gives about five visible rings:
+      # enough for the contraction to read clearly, not so many that they
+      # alias into a shimmer at the rim.
+      ring_spacing_px: 20
+
+      # 255 matches background_gray below, so the light rings vanish into the
+      # ground and the circle is defined by its dark rings alone -- the same
+      # dark as every other stimulus here.
+      color_a_gray: 255
+      color_b_gray: 20
 
 conditions:
   # Two distinct stimuli per trial, drawn at random, sides randomised. Over
@@ -92,9 +110,10 @@ conditions:
   #
   # mode: pairs
   # pairs:
-  #   - {a: jitter_small,  b: jitter_large}    # the amplitude question
-  #   - {a: static_black,  b: jitter_small}    # does motion matter at all
-  #   - {a: blank,         b: static_black}    # does a target matter at all
+  #   - {a: jitter_large,  b: telescope_inward}  # which kind of motion
+  #   - {a: static_black,  b: jitter_large}      # does wandering matter
+  #   - {a: static_black,  b: telescope_inward}  # does contracting matter
+  #   - {a: blank,         b: static_black}      # does a target matter at all
   #
   # {a, b} randomises which side each lands on; {left, right} pins them.
 
@@ -114,6 +133,6 @@ display:
   right_center_px: null
 
 # Presence of this block makes the run triggered: the node opens ARMED and
-# waits. triggered_assay.launch.py overrides the topic to wire the detector in.
+# waits. arena_experiment.launch.py overrides the topic to wire the detector in.
 trigger:
   topic: /arena/mosquito_present

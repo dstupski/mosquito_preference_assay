@@ -2099,6 +2099,23 @@ so recordings are distinguishable.
 
 ---
 
+### Checking the sides live, during a run
+
+```bash
+python3 tools/watch_stimuli.py
+```
+
+```
+armed     LEFT=blank             RIGHT=telescope_inward
+running   LEFT=blank             RIGHT=telescope_inward   trial_seed=2873312514
+```
+
+Prints only on change. With `stimuli_when_armed: true` the sides are settled
+while still **armed**, so you can stand at the arena and confirm the
+projection against what the assay thinks it is showing before an animal is
+introduced. The underlying topic is
+`/stimulus_publisher/stimulus_state` — echo it directly for the raw JSON.
+
 ### Reading back what a run showed
 
 Which stimulus went left and which went right is decided at run time by the
