@@ -84,6 +84,16 @@
     # each trial starts at a different point in the animation -- published as
     # stimulus_elapsed_at_trial_start in stimulus_state/trial_start.
     stimuli_when_armed: false
+
+    # When the trial ends, clear the stimuli but KEEP the window up showing
+    # the background, instead of exiting a couple of seconds later.
+    #
+    # If the projector also lights the arena, letting it go dark between
+    # animals changes the light environment -- that is a variable, not a
+    # neutral idle state. The video bag still closes at the end of the
+    # trial; Ctrl-C when you are ready for the next animal, which closes
+    # the rest cleanly.
+    hold_after_trial: false
     # override which node/topic fires the trial.
     trigger_topic: ""
     # "" -> use the experiment's `trigger.msg_type` (or "bool").

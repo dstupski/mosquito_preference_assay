@@ -27,6 +27,9 @@ the `experiment_file` parameter. The rest of the parameters are operational:
 
     experiment_file     string  ""    experiment name / path; "" -> built-in default
     start_mode          string  ""    "" -> derive from the experiment's `trigger:` block
+    hold_after_trial    bool    False  when the trial ends, clear the stimuli but
+                        KEEP the window up showing the background, instead of
+                        exiting. Stops the projector going dark between animals.
     stimuli_when_armed  bool    False  draw the stimuli while ARMED, so the
                         trigger opens the recording window instead of making
                         the stimuli appear (no onset transient to startle the
@@ -243,6 +246,13 @@ class StimulusPublisher(Node):
         self._sketch_was_running = False
         self._complete_since = None
         self._exit_grace_sec = float(self.declare_parameter("exit_grace_sec", 2.0).value)
+        # Keep the window up, showing only the background, once the trial
+        # is over instead of exiting. If the projector also lights the
+        # arena, letting it go dark between animals changes the light
+        # environment -- which is a variable, not a neutral idle state.
+        self._hold_after_trial = bool(
+            self.declare_parameter("hold_after_trial", False).value)
+        self._held_note = False
         self._watchdog = self.create_timer(0.25, self._check_sketch)
 
         if start_mode == "triggered":
@@ -310,7 +320,13 @@ class StimulusPublisher(Node):
             self._sketch_was_running = True
         if self.should_exit:
             return
-        if assay.experiment_complete():
+        if assay.experiment_complete() and self._hold_after_trial:
+            if not self._held_note:
+                self._held_note = True
+                self.get_logger().info(
+                    "trial over; stimuli cleared, background HELD on screen. "
+                    "Ctrl-C when you are ready -- that closes the bags.")
+        elif assay.experiment_complete():
             now = self.get_clock().now().nanoseconds / 1e9
             if self._complete_since is None:
                 self._complete_since = now

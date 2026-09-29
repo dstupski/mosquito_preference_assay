@@ -113,11 +113,10 @@ def generate_launch_description():
         monitor = LaunchConfiguration("monitor").perform(context).strip()
         if monitor:
             overrides["monitor"] = monitor
-        armed_stimuli = LaunchConfiguration(
-            "stimuli_when_armed").perform(context).strip()
-        if armed_stimuli:
-            overrides["stimuli_when_armed"] = \
-                armed_stimuli.lower() in ("1", "true", "yes")
+        for name in ("stimuli_when_armed", "hold_after_trial"):
+            value = LaunchConfiguration(name).perform(context).strip()
+            if value:
+                overrides[name] = value.lower() in ("1", "true", "yes")
 
         node = Node(
             package="mosquito_preference_assay",
@@ -190,6 +189,7 @@ def generate_launch_description():
         DeclareLaunchArgument("fullscreen", default_value=""),
         DeclareLaunchArgument("monitor", default_value=""),
         DeclareLaunchArgument("stimuli_when_armed", default_value=""),
+        DeclareLaunchArgument("hold_after_trial", default_value=""),
         DeclareLaunchArgument("delay_sec", default_value="4.0"),
         DeclareLaunchArgument("repeat_sec", default_value="0.0"),
         DeclareLaunchArgument("bag_dir", default_value=_DEFAULT_BAG),

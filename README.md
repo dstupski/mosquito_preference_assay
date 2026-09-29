@@ -1138,6 +1138,39 @@ trial_duration_sec              = 15.0
 It applies to triggered mode only, and the default (`false`) is unchanged:
 armed carries no stimuli, and the trigger builds them.
 
+### Keeping the background up between animals
+
+By default the window closes a couple of seconds after the trial. If the
+projector also lights the arena, that means the light environment changes
+every time a trial ends — a variable, not a neutral idle state.
+`hold_after_trial` clears the stimuli at the end of the trial but leaves the
+background on screen:
+
+```yaml
+/**:
+  ros__parameters:
+    hold_after_trial: true
+```
+
+```
+[assay] trial 0 (complete)
+trial over; stimuli cleared, background HELD on screen.
+Ctrl-C when you are ready -- that closes the bags.
+```
+
+Pair it with `stimuli_when_armed: true` and the projector output is constant
+for the whole session apart from the stimuli themselves appearing and
+disappearing at defined moments.
+
+**The video bag still closes at the end of the trial**, not when you
+Ctrl-C — `trial_recorder` watches for `phase: complete` and stops there, so
+holding the display does not record an empty arena for however long you take.
+The assay bag stays open until you exit, which costs almost nothing.
+
+This changes how a run ends: `Ctrl-C` becomes the step that finishes it, and
+it closes both bags cleanly through the same shutdown path. One launch is
+still one animal.
+
 ### Detector-armed capture — the rig workflow
 
 `triggered_assay.launch.py` is the whole rig in one command: the display comes up **ARMED on the projector before the animal is

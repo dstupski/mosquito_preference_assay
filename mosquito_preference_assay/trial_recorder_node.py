@@ -28,6 +28,7 @@ two rosbag2 processes cannot share an output directory. Both bags carry the
 same timestamps, so they align on playback.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -35,6 +36,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Bool, String
 
 
@@ -54,6 +56,7 @@ class TrialRecorderNode(Node):
 
         self.proc = None
         self.started_at = None
+        self._closed = False        # stop() runs at trial end AND shutdown
 
         if not self.bag_dir:
             self.get_logger().error("bag_dir is empty -- refusing to record")
@@ -62,6 +65,21 @@ class TrialRecorderNode(Node):
 
         kind = Bool if msg_type.lower() == "bool" else String
         self.create_subscription(kind, self.trigger_topic, self._on_trigger, 10)
+
+        # Close the video bag when the trial ENDS, not only at shutdown.
+        # With hold_after_trial the sketch deliberately stays up, so
+        # shutdown may be minutes away and the recorder would otherwise
+        # keep writing an empty arena the whole time.
+        self.state_topic = str(
+            self.declare_parameter(
+                "state_topic", "/stimulus_publisher/stimulus_state").value).strip()
+        if self.state_topic:
+            latched = QoSProfile(
+                depth=1,
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+            self.create_subscription(
+                String, self.state_topic, self._on_state, latched)
         self.get_logger().info(
             f"trial_recorder armed on '{self.trigger_topic}' ({msg_type}); "
             f"on trigger -> {self.bag_dir}\n  topics: {', '.join(self.video_topics)}")
@@ -73,6 +91,15 @@ class TrialRecorderNode(Node):
         if isinstance(msg, Bool) and not msg.data:
             return
         self.start()
+
+    def _on_state(self, msg):
+        try:
+            phase = json.loads(msg.data).get("phase")
+        except (ValueError, AttributeError):
+            return
+        if phase == "complete" and self.proc is not None:
+            self.get_logger().info("trial complete -- closing the video bag")
+            self.stop()
 
     def start(self):
         if self.proc is not None:                # one trial, one video bag
@@ -90,9 +117,13 @@ class TrialRecorderNode(Node):
             f"TRIGGER -> recording video to {self.bag_dir} (pid {self.proc.pid})")
 
     def stop(self):
+        if self._closed:
+            return                  # already closed cleanly at trial end
         if self.proc is None:
+            self._closed = True
             self.get_logger().info("no trigger fired -- no video bag written")
             return
+        self._closed = True
         if self.proc.poll() is not None:
             self.get_logger().warn(
                 f"video recorder already exited (code {self.proc.returncode})")

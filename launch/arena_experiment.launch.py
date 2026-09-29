@@ -60,6 +60,10 @@ Arguments
                                 stimuli play from launch and the trigger only
                                 opens the recording window, so the animal sees
                                 no sudden onset
+    hold_after_trial ""        true = when the trial ends, clear the stimuli
+                                but KEEP the background on screen instead of
+                                exiting, so the projector does not go dark
+                                between animals. Ctrl-C closes the bags.
     record_video     true       false = assay topics only
     record           true       false = no bags at all (dry run)
     trigger_topic    /arena/mosquito_present
@@ -122,6 +126,7 @@ def generate_launch_description():
         DeclareLaunchArgument("master_seed", default_value=""),
         DeclareLaunchArgument("detector_delay", default_value="4.0"),
         DeclareLaunchArgument("stimuli_when_armed", default_value=""),
+        DeclareLaunchArgument("hold_after_trial", default_value=""),
         DeclareLaunchArgument("record_video", default_value="true"),
         DeclareLaunchArgument("record", default_value="true"),
         DeclareLaunchArgument("trigger_topic", default_value=DEFAULT_TRIGGER_TOPIC),
@@ -197,7 +202,7 @@ def generate_launch_description():
             value = _arg(context, name)
             if value:
                 sketch_overrides[key] = cast(value)
-        for name in ("fullscreen", "stimuli_when_armed"):
+        for name in ("fullscreen", "stimuli_when_armed", "hold_after_trial"):
             value = _arg(context, name)
             if value:
                 sketch_overrides[name] = value.lower() in ("1", "true", "yes")
