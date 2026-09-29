@@ -97,7 +97,11 @@ class TrialRecorderNode(Node):
             phase = json.loads(msg.data).get("phase")
         except (ValueError, AttributeError):
             return
-        if phase == "complete" and self.proc is not None:
+        # `_closed` matters here, not just inside stop(): stimulus_state is
+        # a 10 Hz heartbeat that keeps reporting "complete" for as long as
+        # the display is held, so without this the log fills with hundreds
+        # of identical lines and buries everything else.
+        if phase == "complete" and self.proc is not None and not self._closed:
             self.get_logger().info("trial complete -- closing the video bag")
             self.stop()
 
