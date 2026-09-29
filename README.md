@@ -2034,11 +2034,18 @@ so recordings are distinguishable.
 
 ### `~/stimulus_state` — schema `mosquito_preference_assay/stimulus_state/3`
 
-**Armed** (triggered mode, before the trigger) — just:
+**Armed**, with `stimuli_when_armed: false` (the default) — the stimuli do
+not exist yet, so:
 
 ```json
 {"schema":"…/3","stamp_wall":…,"phase":"armed","run_id":0}
 ```
+
+With `stimuli_when_armed: true` the stimuli are built before the trigger, so
+an **armed** message carries the full body below — `left` and `right`
+included. That is what lets you read the sides off the topic before
+anything fires. The field to test is not `phase`: it is whether `left` is
+present.
 
 **Running / complete:**
 

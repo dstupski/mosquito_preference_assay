@@ -673,10 +673,13 @@ def experiment_info_json():
 def current_state():
     """A JSON snapshot of what is on screen right now, or None before setup().
 
-    In the "armed" phase it is just schema/stamp/phase/run_id. Otherwise it is
-    the trial: ids + seed, the condition, geometry, and each side's name / type
-    / resolved params. Static run metadata (experiment, seeds) lives on
-    ~/experiment_info, not here.
+    Carries the trial -- ids + seed, the condition, geometry, and each
+    side's name / type / resolved params -- whenever stimuli EXIST, which
+    is not the same as "the trial is running". With stimuli_when_armed the
+    stimuli are built before the trigger, so armed messages carry them too,
+    and the sides can be read off before anything fires. Without it the
+    armed message is just schema/stamp/phase/run_id. Static run metadata
+    (experiment, seeds) lives on ~/experiment_info, not here.
     """
     with _lock:
         experiment = _rt["experiment"]
