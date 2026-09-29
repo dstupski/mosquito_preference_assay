@@ -22,11 +22,10 @@ graphics; ROS 2 Humble for the plumbing.
 [writing an experiment](#writing-an-experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
-[custom params file](#launching-with-your-own-params-file) ·
 [where does this setting go?](#where-does-this-setting-go) ·
 [**running the real experiment**](#running-the-real-experiment) ·
 [the trigger zone](#setting-the-trigger-region-for-a-new-rig) ·
-[triggering](#triggering) · [the rig workflow](#detector-armed-capture--the-rig-workflow) ·
+[triggering](#triggering) ·
 [stimuli always playing](#stimuli-playing-the-whole-time--avoiding-an-onset-transient)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
@@ -225,6 +224,9 @@ you deploy to several rigs.
 
 ## Setting up a rig, start to finish
 
+Every command here is also in [`COMMANDS.txt`](COMMANDS.txt), the
+copy-paste sheet meant to live on the rig machine.
+
 Six steps from a fresh clone to running an animal. Each one leaves something
 you can check, so you find problems at the step that caused them.
 
@@ -306,18 +308,30 @@ and closes the bag exactly as a real run would.
 ros2 bag info display_test_*        # metadata.yaml present = it closed cleanly
 ```
 
-**6. Run an animal.**
+**6. Draw the trigger zone** on the live camera — with the cameras
+publishing, since it shows the real feed. It ships as the whole frame, which
+will fire on reflections and equipment:
 
 ```bash
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=sippell_retest_experiment \
-    bag_dir:=~/data/sippell_retest_experiment/animal_01
+ros2 launch mosquito_preference_assay trigger_roi.launch.py
 ```
 
-One launch = one animal = one bag. Before the first real animal, set the
-detector's trigger region — see
-[setting the trigger region](#setting-the-trigger-region-for-a-new-rig),
-because it ships as the whole frame and will fire on reflections.
+Drag the box over the arena, `s` to save. Green boxes in the overlay are blobs
+that would fire a trial; grey ones are ignored. Details in
+[setting the trigger region](#setting-the-trigger-region-for-a-new-rig).
+
+**7. Run an animal.**
+
+```bash
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=sippell_retest_experiment \
+    save_dir:=/data/mosquito/$(date +%F)
+```
+
+One launch = one animal = one run folder. Your camera package must already be
+publishing. Recording starts at the trigger and both bags close when the trial
+ends; the display then stays up so the arena's light does not change between
+animals — Ctrl-C when you are ready for the next one.
 
 ### Running a different setup
 
@@ -325,7 +339,7 @@ The file named `config/assay_params.local.yaml` is always the one used. To keep
 several and switch between them, name them and pass the one you want:
 
 ```bash
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     params_file:=config/rig_b.local.yaml experiment_file:=sippell_retest_experiment
 ```
 
@@ -400,10 +414,9 @@ ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
 **6. Run it for real**, one animal per launch:
 
 ```bash
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    params_file:=~/rig/assay_params.yaml \
-    experiment_file:=looming_vs_static fullscreen:=true monitor:=2 \
-    bag_dir:=~/data/looming_vs_static/animal_07
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=looming_vs_static \
+    save_dir:=/data/mosquito/$(date +%F) run_name:=animal_07
 ```
 
 #### Once you have collected data, treat the file as frozen
@@ -639,32 +652,19 @@ luck. The pattern shows:
 | live frame counter + fps | the sketch is really rendering on that screen, not a frozen window |
 | display index, resolution, position | which screen it *actually* opened on, beside the one requested |
 
-**Aligning, and pointing the experiment at the result.** Press `s` and
-`display_check` writes the geometry twice: `config/display_geometry.local.yaml`
-(gitignored, and what every launch file layers over the params file by
-default) and a dated archive. So the workflow is align → `s` → launch, with
-the circles where you put them, at the size you set:
-
-```bash
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=sippell_retest_experiment                     # uses the current one
-
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    experiment_file:=sippell_retest_experiment \
-    display_config:=config/20260923_display_config.yaml   # or a specific one
-```
-
-`display_config:=` takes any file `s` wrote, so keep every dated calibration
-and point at whichever you want. It is layered *after* the params file, so it
-wins. `circle_diameter_px` is in there as a real parameter: the angular size
-the animal sees is the scientific variable, and the pixels that achieve it
-depend on this rig's throw distance — so it overrides the experiment's
-diameter rather than living in the experiment file.
-
 **Aligning.** The two circles are treated as one object — a **midpoint** and a
 **separation** — because that is the rig's real constraint: they sit at the
 same height, equidistant from centre. You cannot accidentally leave them at
 different heights or off-centre, because there is no way to express it.
+
+Press **`s`** and that is the whole handoff: it writes
+`config/display_geometry.local.yaml`, which every launch layers over the
+params file automatically, plus a dated archive. Align → `s` → launch, with
+the circles where you put them at the size you set; `display_config:=<path>`
+runs an older one. `circle_diameter_px` rides along as a real parameter,
+because the angular size the animal sees is the scientific variable and the
+pixels achieving it depend on this rig's throw distance — so it overrides
+the experiment's diameter rather than living in the experiment file.
 
 | | |
 |---|---|
@@ -742,100 +742,68 @@ should this value travel with it?*
 
 | Belongs to | What | Where |
 |---|---|---|
-| **The science** | `experiments/*.yaml` — stimulus pool, conditions, duration, circle diameter | in the repo, committed, identical everywhere |
-| **The rig** | display / `monitor`, stimulus centres, detector ROI, camera topics, calibration | `config/*.yaml` to start — see below |
-| **The session** | bag paths, `master_seed`, one-off overrides | the command line |
+| **The science** | `experiments/*.yaml` — stimulus pool, conditions, duration | in the repo, committed, identical everywhere |
+| **The rig** | monitor, stimulus centres, trigger zone, camera topics, calibration | `config/*.local.yaml` |
+| **The session** | `save_dir`, `master_seed`, one-off overrides | the command line |
 
 Stimulus definitions travel — they *are* the manipulation. A monitor index and
 a pixel centre describe a room, and must not.
 
-**Copy the boilerplate to a `.local` file and edit that.** `config/*.yaml` is
-tracked, so it is both the fully-commented boilerplate a fresh clone gets and
-a file `git pull` can rewrite. A `.local.yaml` beside it is gitignored and
-**takes precedence automatically** — every launch file prefers one when it
-exists, so no command changes:
+**Copy the boilerplate, edit the copy.** `config/*.yaml` is tracked, so it is
+both the fully-commented file a fresh clone gets and a file `git pull` can
+rewrite. A `.local.yaml` beside it is gitignored and **takes precedence
+automatically** — no command changes:
 
 ```bash
-cp config/assay_params.yaml config/assay_params.local.yaml
-# edit config/assay_params.local.yaml -- monitor, fullscreen, circle centres
+cp config/assay_params.yaml    config/assay_params.local.yaml
+cp config/detector_params.yaml config/detector_params.local.yaml
 ```
 
-A pull can then never touch the config you are actually running on, which is
-what you want when you are on site mid-session. A fresh clone has no `.local`
-file and simply uses the tracked boilerplate, so nothing is broken before you
-make one. The same works for `detector_params.yaml`.
+A pull can then never touch the config you are running on, which is what you
+want on site mid-session. A fresh clone has no `.local` file and uses the
+boilerplate, so nothing is broken before you make one.
 
-Copy the **whole** file rather than writing a short one: `params_file:=`
-replaces rather than merges, so anything you leave out falls back to the
-node's hardcoded default rather than to the boilerplate. Every parameter the
-node accepts is in there for that reason.
+**Copy the whole file, not a short one.** `params_file:=` *replaces* rather
+than merges: anything you leave out falls back to the node's hardcoded default,
+**not** to the boilerplate. There is a place those disagree —
 
-**Split it out when a second rig appears.** The moment two machines each want
-their own `monitor` and circle centres, one tracked file cannot hold both —
-they will fight on every `git pull`. That is the signal to move to a per-rig
-file outside the repo, passed with `params_file:=`:
+| | node default | `config/assay_params.yaml` |
+|---|---|---|
+| `experiment_file` | `""` → the built-in default | `two_choice_default` |
 
-```
-~/rig/                                   # only once you have more than one rig
-  assay_params.yaml                      # copied from config/, then edited
-  detector_params.yaml
-  20260921_display_config.yaml           # alignments collect here, date-stamped
-  calibration/Checkerboard_2025_April_10.npy
-              Plumbline_2025_April_10.npy
-```
+— so a file containing only `monitor: "2"` would silently run a *different
+experiment*.
+
+**New options do not appear in your `.local` file.** That is the same
+gitignore protecting your calibration. After a pull that adds a setting, the
+setting exists but your file does not mention it, so you silently get its
+default. Compare against the boilerplate when something new does not seem to
+work.
+
+**Alignment and zone files are written for you.** `display_check` and
+`trigger_roi` write `display_geometry.local.yaml` and `trigger_roi.local.yaml`,
+which every launch layers over the params file automatically, plus a dated
+archive of each. Point at an older one with `display_config:=` or
+`trigger_config:=`.
+
+**A second rig is when to move out of the repo.** The moment two machines each
+want their own monitor and centres, one tracked file cannot hold both. Keep a
+rig directory and pass it explicitly:
 
 ```bash
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     params_file:=~/rig/assay_params.yaml
-ros2 launch mosquito_preference_assay display_check.launch.py \
-    fullscreen:=true monitor:=2 out_file:=~/rig
 ```
 
-Version that directory. Alignment values are *data*: "which centres were in use
-on 14 May" is something you will want when interpreting results, and both
-calibration and alignment need redoing whenever a projector or camera is
-physically bumped.
+Version that directory. Alignment values are *data* — "which centres were in
+use on 14 May" matters when interpreting results, and both calibration and
+alignment need redoing whenever a projector or camera is bumped.
 
-### Rehearsing a trial with no camera and no mosquito
-
-Before an animal is anywhere near the rig, check the whole path at once:
-
-```bash
-ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    params_file:=~/rig/assay_params.yaml \
-    experiment_file:=ten_stimulus_panel \
-    fullscreen:=true monitor:=2
-```
-
-The node comes up ARMED, `test_trigger` fires the trigger itself after
-`delay_sec` — standing in for the detector, so no camera is involved — the
-trial runs for its `duration_sec`, the node exits, and that exit closes the
-bag exactly as on a real run. In one go you see whether:
-
-- the circles land where your config says, on the screen you meant
-- your experiment file draws the trial you expect
-- the trigger path works end to end
-- the bag records **and finalizes**, with the trial inside it
-
-The two config paths are separate because they answer different questions:
-`params_file` is **this rig** (which screen, where the circles sit) and
-`experiment_file` is **the science** (which stimuli, how the pair is drawn,
-how long). `fullscreen` / `monitor` override the params file for a one-off, so
-you can rehearse on the projector without editing anything.
-
-Afterwards:
-
-```bash
-ros2 bag info <bag_dir>     # metadata.yaml present = it closed cleanly
-```
-
-Other arguments: `delay_sec` (4.0) how long ARMED before firing, `repeat_sec`
-(>0 to watch several trials), `bag_dir`, `record:=false` for display only.
-
-Like `triggered_assay.launch.py`, this file **forces** the trigger topic and
-type on both ends rather than trusting the experiment file's `trigger:` block
-to match — a display rehearsal that silently never fires would be worse than
-no rehearsal.
+**Arguments beat the file, but only when given.** `fullscreen`, `monitor`,
+`experiment_file`, `master_seed`, `stimuli_when_armed` and `hold_after_trial`
+are all unset-means-leave-alone, so a one-off never edits your saved config.
+Every launch file that runs the sketch or detector takes `params_file:=`; only
+`tracking_benchmark` does not.
 
 ### Building so your edits take effect immediately
 
@@ -846,125 +814,59 @@ colcon build --packages-select mosquito_preference_assay --symlink-install
 source install/setup.bash
 ```
 
-The install space then symlinks through the build space to your **source
-tree**, so these are live the moment you save:
+The install space then symlinks to your **source tree**:
 
 | Edit | Live? |
 |---|---|
 | any `.py` under `mosquito_preference_assay/` | ✅ next time the node starts |
 | `experiments/*.yaml`, `config/*.yaml`, `launch/*.py` | ✅ next launch |
-| anything under `tools/` | ✅ always — never installed, you run it from source |
+| anything under `tools/` | ✅ always — never installed |
 | **`setup.py` (a new entry point) or `package.xml`** | ❌ rebuild |
 
-Nothing is live *within* a running process: the sketch reads its experiment
-once at startup, so "live" means the next `ros2 run` / `ros2 launch`, not
-mid-trial.
+**The flag is not optional.** Without it colcon *copies* config and
+experiments into `install/`, `resolve_config()` looks for your `.local.yaml`
+beside the copy, never finds it, and every edit you make in `src/` silently
+does nothing. Check which world you are in — you want arrows into `src/`:
 
-**Switching an existing workspace over, and why it is worth doing:** colcon
-never *removes* files from the install space, so a plain build leaves deleted
-files behind indefinitely. This workspace still had two experiment files that
-were deleted from the source months earlier, which meant
-`experiment_file:=grating_speed_sweep` worked here and would fail on any fresh
-clone. Clear the package out as you switch:
+```bash
+ls -l install/mosquito_preference_assay/share/mosquito_preference_assay/config/
+```
+
+**Renaming or deleting a file needs a clean rebuild.** colcon never *removes*
+from the install space, so stale names linger as dead symlinks and resolve
+until you clear them out:
 
 ```bash
 rm -rf build/mosquito_preference_assay install/mosquito_preference_assay
 colcon build --packages-select mosquito_preference_assay --symlink-install
 ```
 
-### Launching with your own params file
+### Rehearsing a trial with no camera and no mosquito
 
-**You only need this once your config lives somewhere other than
-`config/assay_params.yaml`** — that file is every launch file's default, so
-while you are editing it in place, none of the commands below need
-`params_file:=` at all.
-
-Every launch file that runs the sketch or the detector takes `params_file:=`.
-Pass it on the command line rather than editing the launch file's default:
-
-```bash
-# one animal, the full rig workflow
-ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    params_file:=~/rig/assay_params.yaml \
-    experiment_file:=sippell_retest_experiment
-
-# rehearse the same thing with no camera
-ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    params_file:=~/rig/assay_params.yaml \
-    experiment_file:=sippell_retest_experiment
-
-# check the display and align the circles
-ros2 launch mosquito_preference_assay display_check.launch.py \
-    params_file:=~/rig/assay_params.yaml out_file:=~/rig
-
-# the plain assay, no trigger
-ros2 launch mosquito_preference_assay assay.launch.py \
-    params_file:=~/rig/assay_params.yaml
-
-# the detector on its own (its own params file, not the assay's)
-ros2 launch mosquito_preference_assay detector.launch.py \
-    params_file:=~/rig/detector_params.yaml
-```
-
-Or with `ros2 run`, which takes the file directly:
-
-```bash
-ros2 run mosquito_preference_assay stimulus_publisher --ros-args \
-    --params-file ~/rig/assay_params.yaml
-```
-
-| Launch file | `params_file:=` |
-|---|---|
-| `assay`, `detector`, `display_check`, `trigger_display_test`, `triggered_assay` | ✅ |
-| `tracking_benchmark` | ❌ — use `ros2 run` with `--params-file`, or the individual arguments |
-
-**Arguments beat the file, but only when you give them.** `fullscreen`,
-`monitor`, `experiment_file`, `master_seed` are all unset-means-leave-alone, so
-this rehearses on the projector without touching your saved config:
+Before an animal is near the rig, check the whole path at once:
 
 ```bash
 ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
-    params_file:=~/rig/assay_params.yaml fullscreen:=true monitor:=2
+    experiment_file:=sippell_retest_experiment
 ```
 
-**Tired of typing it?** An alias is the right place for it — not the launch
-file:
+The sketch comes up ARMED, `test_trigger` fires the trigger itself after
+`delay_sec` — standing in for the detector, so no camera is involved — the
+trial runs, and the bag closes exactly as on a real run. In one go you see
+whether the circles land where your config says on the screen you meant, your
+experiment file draws the trial you expect, the trigger path works end to end,
+and the bag **finalizes** with the trial inside it.
 
 ```bash
-alias mpa-rig='ros2 launch mosquito_preference_assay triggered_assay.launch.py params_file:=~/rig/assay_params.yaml'
+ros2 bag info <bag_dir>     # metadata.yaml present = it closed cleanly
 ```
 
-### `params_file:=` replaces, it does not merge
+Other arguments: `delay_sec` (4.0) how long ARMED before firing, `repeat_sec`
+(>0 to watch several trials), `bag_dir`, `record:=false` for display only.
 
-A launch file passes **one** params file. Anything you leave out falls back to
-the node's **hardcoded** default — *not* to `config/assay_params.yaml`, which
-is not read at all once you pass your own. There is one place those disagree:
-
-| | node default | `config/assay_params.yaml` |
-|---|---|---|
-| `experiment_file` | `""` → the built-in default experiment | `two_choice_default` |
-
-So a minimal rig file containing only `monitor: "2"` would silently run a
-*different experiment*. **Copy `config/assay_params.yaml` and edit the copy**
-rather than writing a short one from scratch.
-
-### Pulling updates without losing your rig files
-
-**Editing `config/*.yaml` in place is fine while you are the only one
-committing** — your changes are just commits like any other, and they follow
-you to the next machine. It stops being fine the moment a second rig edits the
-same tracked file: then every `git pull` is a merge conflict with calibration
-values inside it, and the fix is the per-rig file above. Untracked files pull
-cleanly; modified tracked files do not.
-
-Your `*_display_config.yaml` files are safe from `git pull` — it does not touch
-untracked files. The command that *would* have deleted them is `git clean -fd`,
-so they are now in `.gitignore`, which both keeps `git status` quiet and makes
-`clean -fd` skip them. `git clean -fdx` still removes them: `-x` deliberately
-includes ignored files.
-
-Keeping the rig directory outside the repo avoids all of this, which is the
-real reason to do it.
+Like the real launch, it **forces** the trigger topic and type on both ends
+rather than trusting the experiment file to match — a rehearsal that silently
+never fires would be worse than no rehearsal.
 
 ---
 
@@ -1010,7 +912,7 @@ This is the one that catches people, because they sound alike:
 
 | Delay | Where | What it actually is |
 |---|---|---|
-| `detector_delay` | **launch argument** (`triggered_assay`) | seconds before the *detector starts*, so it cannot fire at a sketch that is not armed yet. Not a property of detection |
+| `detector_delay` | **launch argument** | seconds before the *detector starts*. A backstop only — the detector additionally holds fire until the sketch reports armed. Not a property of detection |
 | `delay_sec` | **launch argument** (`trigger_display_test`) | how long the rehearsal sits ARMED before firing its own fake trigger. Rehearsal only |
 | `consecutive_frames` | `config/detector_params.yaml` | frames in a row a blob must be seen before it counts as a detection — the real debounce |
 | `cooldown_sec` | `config/detector_params.yaml` | minimum gap between one trigger and the next |
@@ -1053,8 +955,10 @@ passing silently, since each means a detected animal did *not* get a trial:
 - **while a trial is already running** — the trial in progress is left alone.
 - **before the sketch has finished starting up.** Opening the JVM and the
   window takes seconds, and a trigger landing in that window cannot run a
-  trial. Start whatever produces triggers *after* the sketch is up —
-  `triggered_assay.launch.py` does this with `detector_delay`.
+  trial. The detector avoids this by holding fire until the sketch's own
+  `stimulus_state` reports `armed` (`arm_topic`), so the animal's first
+  approach is not wasted on a display that is not ready. A bench trigger like
+  `test_trigger` has no such gate — give the sketch a few seconds first.
 
 ### `test_trigger` — fire the trigger on command
 
@@ -1173,70 +1077,33 @@ What this changes is how a run *ends*: Ctrl-C becomes the step that finishes
 it. The data is already safely closed by then. One launch is still one
 animal.
 
-### Detector-armed capture — the rig workflow
+### `triggered_assay` — the single-camera path
 
-`triggered_assay.launch.py` is the whole rig in one command: the display comes up **ARMED on the projector before the animal is
-introduced**, and the stimuli appear only when a mosquito is found. The point
-is *when* the costs are paid — booting the JVM and opening a fullscreen window
-takes seconds, and that happens at launch, not at detection.
+The original one-camera workflow, kept for rigs without a stereo pair. For the
+two-camera rig use [`arena_experiment`](#running-the-real-experiment) instead;
+everything below applies to both unless noted.
 
 ```bash
 ros2 launch mosquito_preference_assay triggered_assay.launch.py \
-    fullscreen:=true monitor:=2
+    experiment_file:=sippell_retest_experiment fullscreen:=true monitor:=2
 ```
 
-```
-launch ──> recorder up (discovered, so nothing is missed later)
-      ├──> stimulus_publisher opens on the projector, sits ARMED drawing
-      │      only the background
-      └──> mosquito_detector starts after detector_delay and watches
-                    │
-  mosquito detected ──> detection_event IS the trigger ──> stimuli appear
-                    │
-       15 s later ──> trial completes ──> node exits ──> bag finalized
-```
+The display comes up ARMED before the animal is introduced, so the seconds
+spent booting the JVM and opening a fullscreen window are paid at launch
+rather than at detection. **Measured on real footage: 14 ms from the detector
+seeing the mosquito to the stimuli being on screen** — about one frame at
+60 fps. To re-measure on your rig, compare the `detection_event`'s
+`stamp_wall` against `trial_start`'s `trial_start_wall` in the bag.
 
-**Measured on real footage: 14 ms from the detector seeing the mosquito to the
-stimuli being on screen** — about one frame at 60 fps. (Compare the
-`detection_event`'s `stamp_wall` with `trial_start`'s `trial_start_wall` in the
-bag to re-measure on your rig.)
+It differs from `arena_experiment` in how it records: `record_mode:=continuous`
+(default) writes from launch, `snapshot` buffers in RAM and flushes at the
+trigger via `snapshot_supervisor`, `none` disables it. `arena_experiment`
+replaces all three by starting both bags at the trigger, which is simpler and
+is what the two-camera rig uses.
 
-Bagging is unchanged: the node still exits when its trial ends, which still
-fires `OnProcessExit → Shutdown`, which still SIGINTs the recorder so
-`metadata.yaml` is written. One launch = one animal = one bag.
-
-| Launch arg | Default | |
-|---|---|---|
-| `fullscreen` / `monitor` | `false` / `""` | the projector — see [the stimulus display](#the-stimulus-display) |
-| `detector_params` | `config/detector_params.yaml` | detector tuning |
-| `image_topic` | `""` | `""` leaves the params file authoritative |
-| `trigger_topic` | `/arena/mosquito_present` | the launch file forces **both** ends onto this, rather than trusting two config files to agree |
-| `detector_delay` | `4.0` | seconds before the detector starts |
-| `record_mode` | `continuous` | `continuous` \| `snapshot` \| `none` |
-| `record_all` | `true` | `-a` (includes camera feeds) vs assay + detection only |
-| `experiment_file` / `bag_dir` / `master_seed` | | as above |
-
-**`record_mode`.** `continuous` writes from launch — simple, no discovery race,
-and the only mode that can take raw camera video. `snapshot` runs the recorder
-in `--snapshot-mode`, buffering in RAM and writing only when the trigger fires,
-so waiting for an animal costs nothing on disk; `snapshot_supervisor` calls
-`/rosbag2_recorder/snapshot` at trial start and at completion. That buffer is
-bounded by `--max-cache-size` (100 MiB default), which is ample for the assay
-and tracking topics and **far too small for raw camera feeds**:
-
-| Camera rate | Two 1440×1080 feeds | 15 s trial |
-|---|---|---|
-| 200 fps | 622 MB/s | 9.3 GB |
-| 100 fps | 311 MB/s | 4.7 GB |
-| 60 fps | 187 MB/s | 2.8 GB |
-| 30 fps | 93 MB/s | 1.4 GB |
-
-So: `snapshot` for the small topics, `continuous` when you want the video.
-
-A detection that arrives before the sketch is armed **cannot** run a trial.
-That used to fail silently — the animal was lost and nothing said so. The node
-now refuses such a trigger with a `TRIGGER REFUSED` warning, and
-`detector_delay` is what stops it arising in the first place.
+Arguments it shares: `params_file`, `experiment_file`, `fullscreen`, `monitor`,
+`detector_params`, `image_topic`, `trigger_topic`, `detector_delay`,
+`bag_dir`, `master_seed`.
 
 ---
 
@@ -1296,8 +1163,14 @@ timestamps, so they align on playback.
 1440×1080 feeds at 200 fps is ~620 MB/s: recording from launch would cost
 ~2.2 TB per hour of waiting for an animal, and buffering 15 s of it in RAM
 (what `--snapshot-mode` does) would need ~9.3 GB. So the video recorder is
-spawned at the trigger instead. **Budget ~9 GB per trial at 200 fps** — an
-18.7 s test wrote 3.3 GB (2242 frames at 1.56 MB each, both cameras).
+spawned at the trigger instead. **Budget the disk before a session:**
+
+| Camera rate | Two 1440×1080 feeds | 15 s trial |
+|---|---|---|
+| 200 fps | 622 MB/s | **9.3 GB** |
+| 100 fps | 311 MB/s | 4.7 GB |
+| 60 fps | 187 MB/s | 2.8 GB |
+| 30 fps | 93 MB/s | 1.4 GB |
 
 Starting at the trigger costs **0.16 s** before the first frame lands —
 rosbag2 has to discover and subscribe to topics that are already publishing,
@@ -1512,13 +1385,6 @@ With no animal in the arena this should stay silent. Anything arriving is a
 false trigger, and on the rig it would burn an animal's trial on a reflection.
 
 
-**Starting numbers.** For the arena in the bundled footage the tracking ROIs
-are `340,40,1260,1070` (cam_a) and `350,20,1370,1070` (cam_b) — they exclude
-the equipment stand and its indicator lights in the bottom-left, which
-otherwise capture the largest-blob heuristic. They are a reasonable first
-guess for a similar framing, but they are *that* rig's numbers: re-derive
-after any camera move.
-
 **Cutting false triggers: `polarity`.** The detector defaults to
 `polarity: "darker"` — only pixels that get *darker* than the background count.
 A dark mosquito on a bright arena qualifies; a reflection, an indicator LED,
@@ -1602,7 +1468,7 @@ ros2 launch mosquito_preference_assay detector.launch.py &
 #    ...or: ros2 run mosquito_preference_assay mosquito_detector --ros-args -p roi:=340,40,1260,1070 &
 
 # 3. the assay, armed, listening for the detector's events, recording to a bag
-#    (triggered_assay.launch.py does steps 2 and 3 together -- see "the rig workflow")
+#    (arena_experiment.launch.py does steps 2 and 3 together)
 ros2 launch mosquito_preference_assay assay.launch.py \
     --ros-args -p start_mode:=triggered \
     -p trigger_topic:=/arena/mosquito_present -p trigger_msg_type:=string
@@ -2028,12 +1894,23 @@ or a `params_file`.
 | `window_pos` | `""` | windowed only — place the sketch at `"x,y"` px |
 | `window_w` / `window_h` | `1200` / `800` | ignored when `fullscreen` |
 | `left_center_px` / `right_center_px` | `""` | `"x,y"` px override of the experiment's `display.*_center_px` |
+| `stimuli_when_armed` | `false` | draw the stimuli from launch, so the trigger opens the **recording window** rather than making them appear — no onset transient for the animal to startle at |
+| `hold_after_trial` | `true` | when the trial ends, clear the stimuli but keep the window up showing the background, so the projector does not go dark between animals. The run then ends on Ctrl-C; both bags have already closed |
 | `heartbeat_hz` | `10.0` | `stimulus_state` re-publish rate |
 | `exit_grace_sec` | `2.0` | stay up this long after a finite experiment completes |
 | `show_debug` | `false` | on-screen labels/timer overlay. **Off**: it draws text on the mosquito-facing display — "waiting for trigger" while armed, and the stimulus names under each circle during a trial. Press `d` to toggle it while setting up |
 
 Screen selection is a ROS param (rig-specific) not an experiment-file field, so
 an experiment YAML stays portable between rigs.
+
+**`mosquito_detector`** has its own file, `config/detector_params.yaml`, with
+every parameter documented inline. The two that most affect whether it fires
+on the wrong thing:
+
+| Param | Default | Notes |
+|---|---|---|
+| `polarity` | `"darker"` | only pixels *darker* than the background count, so reflections, LEDs and projector spill — which get **brighter** — cannot trigger. `brighter` or `any` for other arenas |
+| `arm_topic` | `""` | the assay's `stimulus_state`. While it does not report `armed`, detections are counted but not fired, so the animal's first approach is not wasted on a display still booting. The launch files set this |
 
 ---
 
