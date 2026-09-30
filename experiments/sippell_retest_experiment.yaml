@@ -42,6 +42,15 @@
 # To go back to matched paths, give all three the same seed_x / seed_y and
 # accept lockstep when two of them are drawn together.
 #
+# WHAT VARIES BETWEEN ANIMALS. A jitter's position is a pure function of
+# elapsed time -- nothing is drawn per frame from a random source -- but the
+# Perlin field is re-seeded per run from master_seed, which is random unless
+# pinned. So each animal sees a different trajectory at the same amplitude.
+# That is unbiased across conditions, since all three jitters shift
+# together, but it is variance you are carrying. It cannot be removed by
+# pinning master_seed, because that also fixes which pair is drawn: every
+# animal would then see the same two stimuli.
+#
 # ---------------------------------------------------------------------------
 # RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
 # same file runs on any rig and two rigs running it show the same thing.
@@ -79,9 +88,15 @@ stimuli:
       fill_gray: 20
       amplitude_px: 25
       noise_speed: 1.2
-      # Pinned so every animal sees the SAME wander rather than a fresh random
-      # path -- one less thing varying between trials. Distinct per amplitude;
-      # see the header for why they are not shared.
+      # Offsets into the shared Perlin field -- distinct per amplitude, so
+      # the three wanders are independent rather than scaled copies. See
+      # the header for why they are not shared.
+      #
+      # These do NOT make the path identical across animals: the field
+      # itself is re-seeded each run from master_seed, so every animal gets
+      # a different trajectory of the same amplitude and character. Pinning
+      # master_seed would fix the path but also fix the pairing draw, so
+      # every animal would see the same pair -- see the header.
       seed_x: 111.0
       seed_y: 777.0
 
