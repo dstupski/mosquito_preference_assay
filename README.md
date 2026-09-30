@@ -20,6 +20,7 @@ graphics; ROS 2 Humble for the plumbing.
 
 **Running the assay** — [setting up a new experiment](#setting-up-a-new-experiment-step-by-step) ·
 [writing an experiment](#writing-an-experiment) ·
+[**the jitter dose-response**](#the-jitter-dose-response--sippell_retest_experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
 [where does this setting go?](#where-does-this-setting-go) ·
@@ -534,6 +535,83 @@ positions sit a quarter screen-width apart.
 It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
 is sampled across enough animals); the file's header comment shows the
 `mode: pairs` block to paste in for a control-versus-each design instead.
+
+### The jitter dose-response — `sippell_retest_experiment`
+
+The five-condition study this package is currently set up to run:
+
+| Name | Type | What it does |
+|---|---|---|
+| `blank` | `blank` | nothing drawn — is anything better than nothing? |
+| `static_black` | `static_dark` | motionless dark circle — is *motion* doing the work? |
+| `jitter_25` | `jitter` | wanders ±25 px ┐ |
+| `jitter_50` | `jitter` | wanders ±50 px ├ one manipulation, three levels |
+| `jitter_75` | `jitter` | wanders ±75 px ┘ |
+
+`mode: sample` draws two distinct stimuli per trial, so the ten pairings are
+sampled across enough animals. That is nearly twice the six pairings of a
+four-stimulus design — if it is too many animals, the file's header shows the
+`mode: pairs` form for running only the comparisons you care about.
+
+**Amplitude has a ceiling set by the rig, not by taste.** Two circles
+jittering toward each other close the gap between them by twice the amplitude:
+
+```
+edge gap           = separation - diameter
+max safe amplitude = edge gap / 2
+```
+
+At 395 px separation with 220 px circles the gap is 175 px, so the ceiling is
+~86 px and 75 leaves 25 px clear at worst case. Read your own separation and
+diameter out of `config/display_geometry.local.yaml` after aligning and check
+it. **If the circles can touch, a preference measured near the midline is not
+a preference between two stimuli** — it is a response to one merged object.
+
+**Amplitude scales speed too.** Amplitude is a plain multiplier on position, so
+it multiplies velocity identically — the three levels are 1:2:3 in *both*
+excursion and speed:
+
+| | excursion | mean speed |
+|---|---|---|
+| `jitter_25` | 50 px | 20 px/s |
+| `jitter_50` | 99 px | 40 px/s |
+| `jitter_75` | 149 px | 60 px/s |
+
+So the variable is **motion magnitude**, not "how far" alone: a preference for
+`jitter_75` cannot be attributed to distance rather than speed. To vary
+excursion at constant speed, drop `noise_speed` in proportion — but that
+changes the temporal frequency instead, trading one confound for another.
+There is no parameterisation that separates them, because position is
+amplitude × noise and that is the whole model.
+
+**The three wanders are independent, not scaled copies.** `seed_x`/`seed_y`
+are offsets into a shared Perlin field, and the seeds sit 111 apart while a
+15 s trial advances only 18 units through it — so the three never read
+overlapping stretches. Simulated over 200 runs the pairwise correlation is
++0.04 / −0.00 / +0.01. (An earlier two-jitter version shared seeds so the pair
+traced one path at two sizes; that does not extend to three, because any two
+shared-seed jitters drawn together move as scaled copies of each other and
+read as one object seen twice.)
+
+The spread around that zero is wide — |r| > 0.5 in about 9% of trials — because
+18 wiggles is a short sample. That is chance, not coupling, and since the noise
+field is re-seeded per run it averages out across animals rather than favouring
+a condition.
+
+**What varies between animals.** A jitter's position is a pure function of
+elapsed time — nothing is sampled per frame — but the Perlin field is re-seeded
+each run from `master_seed`, which is random unless pinned. Each animal
+therefore sees a different trajectory of the same amplitude and character.
+Pinning `master_seed` would fix the path but also fixes the pairing draw, so
+every animal would see the same two stimuli; the two are coupled through one
+seed.
+
+**Measuring against the target.** Because the target moves, the nominal centre
+is not where it was. `~/stimulus_position` publishes the drawn position of both
+stimuli at ~60 Hz — see
+[the schema](#stimulus_position--schema-mosquito_preference_assaystimulus_position1).
+`static_black` and `blank` stream their fixed centre at the same rate, so
+distance-to-target is computed identically in every condition.
 
 ### Choosing an experiment at launch
 
