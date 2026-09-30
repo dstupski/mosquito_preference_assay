@@ -145,9 +145,14 @@ python3 ~/ros2_ws/src/mosquito_preference_assay/tools/watch_stimuli.py
 #   armed     LEFT=blank   RIGHT=telescope_inward
 #   running   LEFT=blank   RIGHT=telescope_inward   trial_seed=2873312514
 
-# The raw topic, if you would rather read the JSON yourself:
+# The raw topics, if you would rather read the JSON yourself:
 ros2 topic echo /stimulus_publisher/stimulus_state     # continuous, 10 Hz
 ros2 topic echo /stimulus_publisher/trial_start        # once, at trial start
+ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
+                                                       # stimulus as drawn
+
+# WHERE THE JITTERING TARGET ACTUALLY WAS, per frame -- this is what you
+# relate a flight track to. Recorded in the assay bag, from the trigger on.
 
 
 # --- 3b. what you should see -----------------------------------------------
@@ -265,9 +270,9 @@ ls $RUN/assay/metadata.yaml $RUN/video/metadata.yaml
 
 ls ~/ros2_ws/src/mosquito_preference_assay/experiments/
 
-#   sippell_retest_experiment  4 conditions: blank, static dark, large jitter
-#                              (target moves), telescope_inward (target still,
-#                              rings contract)
+#   sippell_retest_experiment  5 conditions: blank, static dark, and three
+#                              jitter amplitudes (25 / 50 / 75 px) -- a
+#                              dose-response. 10 pairings.
 #   ten_stimulus_panel         10 stimuli, white background
 #   two_choice_default         the built-in default
 #   control_vs_grating         simple two-condition control

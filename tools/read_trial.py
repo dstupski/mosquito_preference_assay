@@ -57,12 +57,14 @@ def summarize(run_dir):
     if os.path.isdir(os.path.join(run_dir, "assay")):
         bag = os.path.join(run_dir, "assay")
 
-    trials, detections, experiment = [], [], None
+    trials, detections, positions, experiment = [], [], [], None
     for topic, msg, _ in read_bag(bag):
         if topic.endswith("/trial_start"):
             trials.append(msg)
         elif topic.endswith("/experiment_info") and experiment is None:
             experiment = msg
+        elif topic.endswith("/stimulus_position"):
+            positions.append(msg)
         elif msg.get("event") == "mosquito_detected":
             detections.append(msg)
 
@@ -70,6 +72,7 @@ def summarize(run_dir):
         "bag": bag,
         "experiment": experiment,
         "detections": detections,
+        "positions": positions,
         # phase "complete" repeats the trial; keep only where it started
         "trials": [t for t in trials if t.get("phase") == "running"],
         "video_bag": (os.path.join(run_dir, "video")
@@ -123,6 +126,14 @@ def main():
         print(f"  centres     L{geo.get('left_center_px')} "
               f"R{geo.get('right_center_px')}  "
               f"diameter {geo.get('circle_diameter_px')}")
+        pos = out["positions"]
+        if pos:
+            w = [q["stamp_wall"] for q in pos]
+            span = w[-1] - w[0]
+            start = t.get("trial_start_wall")
+            lead = f", from {w[0] - start:+.2f} s" if start else ""
+            print(f"  position    {len(pos)} samples over {span:.1f} s "
+                  f"({len(pos) / span:.0f} Hz{lead})")
 
     for d in out["detections"]:
         pos = d.get("position_px", [])

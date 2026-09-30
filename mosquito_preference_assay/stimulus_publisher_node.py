@@ -18,6 +18,11 @@ keep_last 1):
                       run_id only) while ARMED.
                       schema "mosquito_preference_assay/stimulus_state/3"
 
+    stimulus_position where each stimulus actually IS, once per drawn frame
+                      (~60 Hz). For a jitter that is the wandered position,
+                      which is what a flight track has to be related to;
+                      for a still marker it repeats the centre. Schema
+                      mosquito_preference_assay/stimulus_position/1.
     trial_start       the same stimulus_state object, once per new trial (and
                       on phase: complete) -- a convenient downstream trigger.
 
@@ -220,6 +225,16 @@ class StimulusPublisher(Node):
         self._info_pub = self.create_publisher(String, "~/experiment_info", latched)
         self._state_pub = self.create_publisher(String, "~/stimulus_state", latched)
         self._trial_pub = self.create_publisher(String, "~/trial_start", latched)
+        # Per-frame stimulus position. NOT latched and not throttled: it is
+        # a time series, and a retained last sample would be meaningless.
+        # Volatile also means nothing from before the trigger reaches the
+        # bag, which starts at the trigger -- exactly the wanted behaviour,
+        # since the arena is empty until then.
+        self._publish_position = bool(
+            self.declare_parameter("publish_stimulus_position", True).value)
+        self._position_pub = (
+            self.create_publisher(String, "~/stimulus_position", 50)
+            if self._publish_position else None)
 
         # Static run metadata (experiment, seeds, pool) -- published once here,
         # kept out of every stimulus_state message.
@@ -240,6 +255,8 @@ class StimulusPublisher(Node):
         self.get_logger().info(f"geometry: centres from {centres}; diameter {size}")
 
         assay.set_trial_change_callback(self._on_trial_change)
+        if self._position_pub is not None:
+            assay.set_position_callback(self._on_position)
 
         hz = heartbeat_hz if heartbeat_hz and heartbeat_hz > 0 else 10.0
         self._timer = self.create_timer(1.0 / hz, self._publish_state)
@@ -341,6 +358,12 @@ class StimulusPublisher(Node):
             self.get_logger().info("sketch window closed; shutting down")
             self.should_exit = True
 
+    def _on_position(self, payload):
+        """Called from the sketch thread once per drawn frame (~60 Hz)."""
+        msg = String()
+        msg.data = json.dumps(payload, separators=(",", ":"))
+        self._position_pub.publish(msg)
+
     def _on_trial_change(self, state):
         """Called from the py5 sketch thread on each new trial (and on
         run-abort / experiment-complete)."""
@@ -394,6 +417,7 @@ def main(args=None):
         exit_code = 1
     finally:
         assay.set_trial_change_callback(None)
+        assay.set_position_callback(None)
         assay.request_stop()
         try:
             node.destroy_node()

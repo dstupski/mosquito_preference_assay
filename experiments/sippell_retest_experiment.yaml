@@ -1,42 +1,46 @@
-# Which kind of motion attracts -- wandering, or receding?
+# Does a wandering target attract, and does wandering further attract more?
 #
-# Four stimuli, so six possible pairings. mode: sample draws two distinct ones
+# Five stimuli, so ten possible pairings. mode: sample draws two distinct ones
 # per trial, so across enough animals every pairing is sampled:
 #
-#     blank             nothing at all       -- is anything better than nothing?
-#     static_black      a still dark circle  -- is motion doing the work, or is
-#                                               a dark target enough?
-#     jitter_large      wanders +/-80 px     -- motion of position: the object
-#                                               stays the same, and moves
-#     telescope_inward  rings contract       -- motion of pattern: the object
-#                                               stays put, and its surface
-#                                               streams inward
+#     blank          nothing at all      -- is anything better than nothing?
+#     static_black   a still dark circle -- is MOTION doing the work, or is a
+#                                           dark target enough?
+#     jitter_25      wanders +/-25 px  ─┐
+#     jitter_50      wanders +/-50 px   ├ the dose-response
+#     jitter_75      wanders +/-75 px  ─┘
 #
-# The two motion stimuli are the comparison this file exists for, and they are
-# deliberately different KINDS of motion rather than two amounts of one kind.
-# jitter moves the whole target while its appearance is constant;
-# telescope_inward holds the target still while its interior moves. Against
-# static_black, each asks a different question about what the animal is
-# responding to.
+# The three jitters are one manipulation at three levels, evenly spaced 1:2:3.
+# Everything else about them is identical -- same fill, same noise_speed, same
+# diameter -- so amplitude is the only thing that varies across the set.
 #
-# TWO HONEST CONFOUNDS, stated because the pairing cannot remove them:
+# AMPLITUDE HAS A CEILING, set by the rig's geometry, not by taste. Two
+# circles jittering toward each other close the gap between them by twice the
+# amplitude:
 #
-#   * Mean luminance differs. static_black and jitter_large are solid dark;
-#     telescope_inward alternates dark and light rings, so roughly half its
-#     area is bright at any instant. A preference for or against it may be a
-#     preference about contrast or mean brightness, not about motion.
-#   * Only telescope_inward has internal structure. Nothing else here has a
-#     pattern inside the circle at all.
+#     edge gap  = separation - diameter
+#     max safe amplitude = edge gap / 2
 #
-#   Neither is fatal -- they are the price of comparing a patterned stimulus
-#   with a solid one -- but a result involving telescope_inward cannot be read
-#   as "motion type" alone.
+# On a rig with separation 395 px and diameter 220 px the gap is 175 px, so
+# the ceiling is ~86 px and 75 leaves 25 px of clear space at worst case.
+# CHECK THIS FOR YOUR RIG: read separation and diameter out of
+# config/display_geometry.local.yaml after aligning. If the circles can touch,
+# a "preference" measured near the midline is not a preference between two
+# stimuli, it is a response to one merged object.
 #
-# jitter_large keeps pinned seeds so every animal sees the SAME wander rather
-# than a fresh random one, which takes a nuisance variable out of the
-# comparison. It no longer needs mirroring: mirroring existed only to stop two
-# seed-sharing jitters from moving in lockstep when drawn side by side, and
-# there is now only one jitter in the file.
+# SEEDS ARE INDEPENDENT per amplitude, which is a deliberate change from the
+# earlier two-jitter version of this file. There, both jitters shared seeds so
+# they traced the same path and differed in amplitude alone, with one mirrored
+# so they did not move in lockstep. That does not extend to three: with ten
+# pairings, any two shared-seed jitters paired together move as scaled copies
+# of each other, which reads as one object seen twice. Independent seeds cost
+# the exactly-matched path -- over a short window Perlin noise does not
+# reliably show a 2x amplitude as 2x the excursion (measured 1.57x) -- but the
+# dose-response here is carried by the SET across many animals, not by one
+# matched pair within a trial.
+#
+# To go back to matched paths, give all three the same seed_x / seed_y and
+# accept lockstep when two of them are drawn together.
 #
 # ---------------------------------------------------------------------------
 # RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
@@ -46,17 +50,17 @@
 #     ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 #         experiment_file:=sippell_retest_experiment
 #
-# The rig's half lives in config/assay_params.local.yaml (copied from
-# config/assay_params.yaml, gitignored) and in the calibration display_check
-# writes. Those override the display: block below -- centres AND diameter --
-# so leave this file rig-independent. See the README, "Deploying to another
-# rig".
+# The rig's half lives in config/assay_params.local.yaml and in the
+# calibration display_check writes. Those override the display: block below --
+# centres AND diameter -- so leave this file rig-independent.
 # ---------------------------------------------------------------------------
 schema: mosquito_preference_assay/experiment/1
 name: sippell_retest_experiment
 description: >-
-  Blank and static-dark controls against two kinds of motion -- a target that
-  wanders, and a target that stays put while its rings contract inward.
+  Blank and static-dark controls against three jitter amplitudes, to separate
+  "is it moving" from "how far is it moving". Stimulus position is published
+  per frame on ~/stimulus_position so a flight track can be related to where
+  the target actually was.
 
 stimuli:
   # 1. empty side -- the floor of the assay
@@ -68,52 +72,49 @@ stimuli:
     type: static_dark
     params: {fill_gray: 20}
 
-  # 3. motion of POSITION: a solid target that wanders
-  jitter_large:
+  # --- 3-5. the dose-response. Identical but for amplitude. -----------------
+  jitter_25:
     type: jitter
     params:
       fill_gray: 20
-      amplitude_px: 80
+      amplitude_px: 25
       noise_speed: 1.2
-      # Pinned so the wander is identical for every animal, rather than a
-      # fresh Perlin path each trial. One less thing varying between trials.
+      # Pinned so every animal sees the SAME wander rather than a fresh random
+      # path -- one less thing varying between trials. Distinct per amplitude;
+      # see the header for why they are not shared.
       seed_x: 111.0
       seed_y: 777.0
 
-  # 4. motion of PATTERN: a target that stays put while its rings contract
-  telescope_inward:
-    type: telescope
+  jitter_50:
+    type: jitter
     params:
-      # NEGATIVE speed is what makes it telescope INWARD -- rings contract
-      # toward the centre, reading as receding. Positive would expand outward,
-      # which looms and is a different stimulus entirely.
-      speed_px_per_sec: -60.0
+      fill_gray: 20
+      amplitude_px: 50
+      noise_speed: 1.2
+      seed_x: 222.0
+      seed_y: 888.0
 
-      # 20 px spacing across a 220 px circle gives about five visible rings:
-      # enough for the contraction to read clearly, not so many that they
-      # alias into a shimmer at the rim.
-      ring_spacing_px: 20
-
-      # 255 matches background_gray below, so the light rings vanish into the
-      # ground and the circle is defined by its dark rings alone -- the same
-      # dark as every other stimulus here.
-      color_a_gray: 255
-      color_b_gray: 20
+  jitter_75:
+    type: jitter
+    params:
+      fill_gray: 20
+      amplitude_px: 75
+      noise_speed: 1.2
+      seed_x: 333.0
+      seed_y: 999.0
 
 conditions:
-  # Two distinct stimuli per trial, drawn at random, sides randomised. Over
-  # enough animals this samples all six pairings evenly.
+  # Two distinct stimuli per trial, drawn at random, sides randomised. Ten
+  # pairings now rather than six, so an even sample needs proportionally more
+  # animals -- if that is too many, mode: pairs below runs only the
+  # comparisons you care about.
   mode: sample
 
-  # To run specific comparisons instead of sampling -- fewer animals per
-  # question, but you choose the questions -- replace the line above with:
-  #
   # mode: pairs
   # pairs:
-  #   - {a: jitter_large,  b: telescope_inward}  # which kind of motion
-  #   - {a: static_black,  b: jitter_large}      # does wandering matter
-  #   - {a: static_black,  b: telescope_inward}  # does contracting matter
-  #   - {a: blank,         b: static_black}      # does a target matter at all
+  #   - {a: jitter_25,    b: jitter_75}     # the amplitude question, widest step
+  #   - {a: static_black, b: jitter_50}     # does motion matter at all
+  #   - {a: blank,        b: static_black}  # does a target matter at all
   #
   # {a, b} randomises which side each lands on; {left, right} pins them.
 
@@ -122,8 +123,7 @@ duration_sec: 15.0
 display:
   circle_diameter_px: 220
 
-  # White ground, so the dark circles are maximum contrast. At +/-80 px the
-  # large jitter stays well inside the gap between the two positions.
+  # White ground, so the dark circles are maximum contrast.
   background_gray: 255
 
   # null -> auto: left at a quarter of the screen width, right at three

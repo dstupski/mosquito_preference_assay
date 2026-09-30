@@ -1896,6 +1896,7 @@ or a `params_file`.
 | `left_center_px` / `right_center_px` | `""` | `"x,y"` px override of the experiment's `display.*_center_px` |
 | `stimuli_when_armed` | `false` | draw the stimuli from launch, so the trigger opens the **recording window** rather than making them appear — no onset transient for the animal to startle at |
 | `hold_after_trial` | `true` | when the trial ends, clear the stimuli but keep the window up showing the background, so the projector does not go dark between animals. The run then ends on Ctrl-C; both bags have already closed |
+| `publish_stimulus_position` | `true` | per-frame `~/stimulus_position` — where each stimulus actually is, for relating a flight track to a moving target |
 | `heartbeat_hz` | `10.0` | `stimulus_state` re-publish rate |
 | `exit_grace_sec` | `2.0` | stay up this long after a finite experiment completes |
 | `show_debug` | `false` | on-screen labels/timer overlay. **Off**: it draws text on the mosquito-facing display — "waiting for trigger" while armed, and the stimulus names under each circle during a trial. Press `d` to toggle it while setting up |
@@ -1954,6 +1955,38 @@ Everything that's constant for the whole run, so it stays out of every
 `mode: pairs` replaces `weights` with `pairs` (the list of pairing names).
 `master_seed` replays the run. `sha1` changes if you edit the experiment YAML,
 so recordings are distinguishable.
+
+### `~/stimulus_position` — schema `mosquito_preference_assay/stimulus_position/1`
+
+Where each stimulus **actually is**, once per drawn frame (~60 Hz). For a
+jitter that is the wandered position, not the nominal centre — which is what a
+flight track has to be related to if you want to ask whether the animal is
+tracking the target. For a still marker it repeats the centre, so the record
+is uniform across conditions and `blank` still has a defined location to
+measure approaches against.
+
+```json
+{"schema":"mosquito_preference_assay/stimulus_position/1",
+ "stamp_wall": 1790793821.63,
+ "phase": "running", "run_id": 1, "trial_id": 0, "trial_uuid": "…",
+ "t": 5.33,
+ "left":  {"name":"jitter_25","x":389.9,"y":401.5},
+ "right": {"name":"blank","x":799.0,"y":400.0}}
+```
+
+`t` is seconds of **stimulus animation**, which with `stimuli_when_armed`
+starts before the trial does — pair it with `stimulus_elapsed_at_trial_start`
+from `stimulus_state` to put it on the trial's clock, or just use
+`stamp_wall`.
+
+Unlike the other assay topics this one is **not latched**: it is a time series,
+and a retained last sample would be meaningless. That also means nothing from
+before the trigger reaches the bag, since the bag starts at the trigger — which
+is what you want, because the arena is empty until then.
+
+Measured coverage of a 15 s trial: first sample **+0.18 s**, last **+14.98 s**,
+60 Hz with no gaps — the 0.18 s being rosbag2 subscribing, the same cost the
+video pays. Set `publish_stimulus_position: false` to turn the stream off.
 
 ### `~/stimulus_state` — schema `mosquito_preference_assay/stimulus_state/3`
 

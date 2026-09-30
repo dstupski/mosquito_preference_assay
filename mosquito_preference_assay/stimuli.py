@@ -7,7 +7,10 @@ Every Stimulus:
   keyword arguments below (all with defaults, so an experiment YAML only lists
   what it wants to change);
 * is drawn once per frame as ``display(cx, cy, t)`` where ``t`` is seconds
-  since *this instance* was placed on screen;
+  since *this instance* was placed on screen, and RETURNS the ``(x, y)`` it
+  actually drew at. For most markers that is the ``(cx, cy)`` it was given;
+  for a jitter it is the wandered position, which is the number you need to
+  relate a flight track to where the target actually was at that instant;
 * implements ``describe()`` -> a plain JSON dict that *completely* specifies
   it (type + resolved params + a uuid), which is what the ROS node publishes.
 
@@ -29,6 +32,7 @@ class Stimulus:
         self.diameter_px = diameter_px
 
     def display(self, cx, cy, t):
+        """Draw one frame; return the (x, y) actually drawn at."""
         raise NotImplementedError
 
     def describe(self):
@@ -56,7 +60,10 @@ class BlankStimulus(Stimulus):
     type_name = "blank"
 
     def display(self, cx, cy, t):
-        pass  # deliberately nothing -- "no stimulus on this side"
+        # Deliberately nothing -- "no stimulus on this side". The centre is
+        # still reported, so an empty side has a defined location to measure
+        # approaches against rather than a gap in the record.
+        return cx, cy
 
 
 # --- 1. Static dark circle: no motion at all. The baseline/control marker. ---
@@ -72,6 +79,7 @@ class StaticDarkStimulus(Stimulus):
         py5.no_stroke()
         py5.fill(self._fill)
         py5.ellipse(cx, cy, self.diameter_px, self.diameter_px)
+        return cx, cy
 
     def _params(self):
         return {"fill_gray": self.fill_gray}
@@ -112,6 +120,7 @@ class JitterStimulus(Stimulus):
         py5.no_stroke()
         py5.fill(self._fill)
         py5.ellipse(cx + dx, cy + dy, self.diameter_px, self.diameter_px)
+        return cx + dx, cy + dy
 
     def _params(self):
         return {
@@ -173,6 +182,7 @@ class MovingGratingStimulus(Stimulus):
         buf.mask(circle_mask(d))
         py5.image_mode(py5.CENTER)
         py5.image(buf, cx, cy)
+        return cx, cy
 
     def _params(self):
         return {
@@ -218,6 +228,7 @@ class TelescopeStimulus(Stimulus):
             py5.ellipse(cx, cy, clamped_r * 2, clamped_r * 2)
             use_color_a = not use_color_a
             r -= self.ring_spacing_px
+        return cx, cy
 
     def _params(self):
         return {
@@ -279,6 +290,7 @@ class SplitGratingStimulus(Stimulus):
         buf.mask(circle_mask(d))
         py5.image_mode(py5.CENTER)
         py5.image(buf, cx, cy)
+        return cx, cy
 
     def _draw_half(self, buf, d, t, start, end, sign):
         """Stripes across [start, end) along the motion axis, drifting in

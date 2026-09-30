@@ -63,6 +63,7 @@ from .experiment import Experiment  # noqa: E402
 from .stimulus_types import build_stimulus  # noqa: E402
 
 STATE_SCHEMA = "mosquito_preference_assay/stimulus_state/3"
+POSITION_SCHEMA = "mosquito_preference_assay/stimulus_position/1"
 INFO_SCHEMA = "mosquito_preference_assay/experiment_info/1"
 
 # --- configuration: set via configure() BEFORE run(); never mutated after ---
@@ -111,6 +112,7 @@ _cfg = {
 }
 
 _on_trial_change = None       # optional callback(state_dict), called from the sketch thread
+_on_position = None           # optional callback(position_dict), called once per drawn frame
 
 # --- runtime state, guarded by _lock (read from both the sketch thread and,
 #     in the ROS node, the executor thread) ---
@@ -162,6 +164,21 @@ def set_trial_change_callback(fn):
     a new trial starts (including the first). Pass None to clear."""
     global _on_trial_change
     _on_trial_change = fn
+
+
+def set_position_callback(fn):
+    """Register fn(position_dict); called from the sketch thread once per
+    DRAWN FRAME with where each stimulus actually is.
+
+    This exists for the jitter conditions: the target's position is itself a
+    time series, and relating a flight track to it needs the position at
+    each instant, not the nominal centre. For a still marker it repeats the
+    centre, which keeps the record uniform across conditions.
+
+    Pass None to clear.
+    """
+    global _on_position
+    _on_position = fn
 
 
 # --------------------------------------------------------------------------- #
@@ -416,8 +433,11 @@ def draw():
 
     _update_geometry(experiment, w, h, left_c, right_c)
 
-    left.display(left_c[0], left_c[1], t)
-    right.display(right_c[0], right_c[1], t)
+    # display() returns where it ACTUALLY drew -- the wandered position for a
+    # jitter, the given centre for anything still.
+    left_at = left.display(left_c[0], left_c[1], t)
+    right_at = right.display(right_c[0], right_c[1], t)
+    _notify_position(t, left_at, right_at)
 
     if show_debug:
         _draw_debug_overlay(t, duration, left_c, right_c)
@@ -536,6 +556,34 @@ def abort_run():
 def phase():
     with _lock:
         return _rt["phase"]
+
+
+def _notify_position(t, left_at, right_at):
+    """Report where both stimuli are, once per drawn frame."""
+    cb = _on_position
+    if cb is None:
+        return
+    with _lock:
+        payload = {
+            "schema": POSITION_SCHEMA,
+            "stamp_wall": time.time(),
+            "phase": _rt["phase"],
+            "run_id": _rt["run_id"],
+            "trial_id": _rt["trial_id"],
+            "trial_uuid": _rt["trial_uuid"],
+            # seconds of STIMULUS animation, which with stimuli_when_armed
+            # starts before the trial does -- see
+            # stimulus_elapsed_at_trial_start in stimulus_state.
+            "t": t,
+            "left": {"name": _rt["left_name"],
+                     "x": float(left_at[0]), "y": float(left_at[1])},
+            "right": {"name": _rt["right_name"],
+                      "x": float(right_at[0]), "y": float(right_at[1])},
+        }
+    try:
+        cb(payload)
+    except Exception as exc:                           # noqa: BLE001
+        print(f"[assay] position callback raised: {exc!r}")
 
 
 def _notify_state():
