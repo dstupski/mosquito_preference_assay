@@ -1250,17 +1250,32 @@ spawned at the trigger instead. **Budget the disk before a session:**
 | 60 fps | 187 MB/s | 2.8 GB |
 | 30 fps | 93 MB/s | 1.4 GB |
 
-Starting at the trigger costs **0.16 s** before the first frame lands —
-rosbag2 has to discover and subscribe to topics that are already publishing,
-about 30 frames at 200 fps.
+**The assay bag has no start-up cost; the video bag does.**
 
-**Nothing is lost to that gap**, because everything published before it is
-latched (`TRANSIENT_LOCAL`): `experiment_info`, `stimulus_state`,
-`trial_start`, and the detection event itself. Verified directly — a recorder
-started *after* a latched message was published still records it, where a
-volatile message published at the same instant is lost entirely. That is why
-`mosquito_detector` publishes its event latched; change that and the message
-which fired the trial stops appearing in its own bag.
+`trial_recorder` writes the assay bag **in-process**. Its subscriptions are
+created at launch, so DDS discovery and subscription matching are paid while
+the rig sits armed; at the trigger it opens a `rosbag2_py` writer and the same
+callbacks stop dropping and start writing. Measured **18 ms** from trial start
+to the first recorded sample — one frame at 60 Hz — against **180–520 ms** for
+a recorder spawned at the trigger.
+
+The video bag is still a spawned recorder and still pays that 180–520 ms
+(~30 frames at 200 fps). It cannot use the same trick: pre-subscribing would
+mean carrying ~620 MB/s for the whole armed period, which is the cost the
+trigger-start design exists to avoid.
+
+Subscribing early means the **latched** topics need care, and this is the part
+to preserve if you touch that node. `experiment_info`, `trial_start` and
+`stimulus_state` are published once, before the trigger. A spawned recorder
+receives them on subscribe; this node subscribed long ago and dropped them. So
+the latest message on each latched topic is cached while armed and written
+first when the bag opens — losing those would cost the experiment definition,
+which is far worse than a slow start.
+
+`mosquito_detector` publishes its detection event latched for the same
+reason — it fires before either recorder exists, and a volatile message
+published at that instant is lost entirely. Change that and the message which
+fired the trial stops appearing in its own bag.
 
 ### The detector holds fire until the display is armed
 
@@ -2062,9 +2077,11 @@ and a retained last sample would be meaningless. That also means nothing from
 before the trigger reaches the bag, since the bag starts at the trigger — which
 is what you want, because the arena is empty until then.
 
-Measured coverage of a 15 s trial: first sample **+0.18 s**, last **+14.98 s**,
-60 Hz with no gaps — the 0.18 s being rosbag2 subscribing, the same cost the
-video pays. Set `publish_stimulus_position: false` to turn the stream off.
+Measured coverage of a 15 s trial: first sample **+0.018 s**, last
+**+14.98 s**, 900 samples at 60 Hz with no gaps — effectively the whole
+trial, because the assay bag is written in-process from pre-made
+subscriptions. Set `publish_stimulus_position: false` to turn the stream
+off.
 
 ### `~/stimulus_state` — schema `mosquito_preference_assay/stimulus_state/3`
 
