@@ -119,12 +119,16 @@ ros2 topic hz /cam_sync/cam1/image_raw
 -------------------------------------------------------------------------------
 
  TERMINAL 1 -- cameras (section 2), left running.
- TERMINAL 2 -- one animal, one trial, one run folder:
+ TERMINAL 2 -- the session. Check the disk is mounted and has room first: a
+ missing /mnt/data is not noticed until the trigger fires, mid-trial.
+
+df -h /mnt/data        # ~9 GB per trial at 200 fps
+
 
 source ~/ros2_ws/install/setup.bash
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
-    save_dir:=/data/mosquito/$(date +%F) \
+    save_dir:=/mnt/data/$(date +%F) \
     stimuli_when_armed:=true
 
 # That is the whole run. It picks up your projector alignment, your trigger
@@ -157,7 +161,7 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 
 
 # --- 3b. what you should see -----------------------------------------------
-#   run folder      : /data/mosquito/2026-09-28/trial_20260928_101500
+#   run folder      : /mnt/data/2026-10-07/trial_20261007_101500
 #   trigger zone    : .../config/trigger_roi.local.yaml
 #   detection camera: /cam_sync/cam0/image_raw
 #   [assay] display 2: 1920x1080 ...              <- the projector
@@ -197,7 +201,7 @@ ros2 run mosquito_preference_assay rearm
 # --- 3e. without the always-on stimuli (circles appear at detection) --------
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
-    save_dir:=/data/mosquito/$(date +%F)
+    save_dir:=/mnt/data/$(date +%F)
 
 
 # --- 3f. useful variations --------------------------------------------------
@@ -205,7 +209,7 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 # name the run folder after the animal
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
-    save_dir:=/data/mosquito/$(date +%F) run_name:=mosq07 \
+    save_dir:=/mnt/data/$(date +%F) run_name:=mosq07 \
     stimuli_when_armed:=true
 
 # detect on the OTHER camera for one run
@@ -252,7 +256,7 @@ ros2 launch mosquito_preference_assay trigger_display_test.launch.py \
  5. CHECK WHAT A RUN ACTUALLY RECORDED
 -------------------------------------------------------------------------------
 
-RUN=/data/mosquito/2026-09-28/trial_20260928_101500
+RUN=/mnt/data/2026-10-07/trial_20261007_101500
 
 ros2 bag info $RUN/assay
 ros2 bag info $RUN/video
@@ -361,8 +365,8 @@ ps -eo pid,etimes,args --no-headers | grep -E "video_publisher|bag record" | gre
 -------------------------------------------------------------------------------
  A trial at 200 fps writes roughly 9 GB of video. Check before a session:
 
-df -h /data
-du -sh /data/mosquito/*
+df -h /mnt/data
+du -sh /mnt/data/*
 
 # Video is a SEPARATE bag inside each run folder, recorded only from the
 # trigger onward. To keep only the assay topics, add record_video:=false.
