@@ -98,6 +98,14 @@
     # window stays up until you Ctrl-C. Set false if you want the launch to
     # terminate by itself after the trial.
     hold_after_trial: true
+
+    # Publish ~/stimulus_position at the sketch's frame rate (~60 Hz):
+    # where each stimulus ACTUALLY is, which for a jitter is the wandered
+    # position rather than the nominal centre. That is the series a flight
+    # track has to be related to if you want to ask whether the animal is
+    # tracking the target. Still markers repeat their centre, so the record
+    # has the same shape in every condition.
+    publish_stimulus_position: true
     # override which node/topic fires the trial.
     trigger_topic: ""
     # "" -> use the experiment's `trigger.msg_type` (or "bool").
