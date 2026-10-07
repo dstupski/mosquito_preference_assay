@@ -72,7 +72,6 @@ Arguments
     trigger_topic    /arena/mosquito_present
 """
 
-import datetime
 import os
 
 from launch import LaunchDescription
@@ -147,12 +146,12 @@ def generate_launch_description():
         video_topics = [t for t in (cam0, cam1) if t]
 
         # --- where everything is written ---------------------------------- #
-        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = os.path.abspath(os.path.expanduser(os.path.join(
-            _arg(context, "save_dir") or os.getcwd(),
-            f"{_arg(context, 'run_name') or 'trial'}_{stamp}")))
-        assay_bag, video_bag = os.path.join(run_dir, "assay"), \
-            os.path.join(run_dir, "video")
+        # trial_recorder names each trial's folder itself, at the trigger:
+        # a session now holds as many trials as you re-arm for, and this file
+        # runs once. The timestamp is then the trigger time, not launch time.
+        save_dir = os.path.abspath(os.path.expanduser(
+            _arg(context, "save_dir") or os.getcwd()))
+        run_name = _arg(context, "run_name") or "trial"
 
         # --- the rig's calibrations --------------------------------------- #
         display_cal = resolve_display_config(_arg(context, "display_config"))
@@ -183,10 +182,8 @@ def generate_launch_description():
         # failure at some point: a stale config, a zone drawn on the other
         # camera, a bag written somewhere nobody looked.
         notes = [LogInfo(msg=(
-            f"run folder      : {run_dir}\n"
-            f"  assay bag     : {assay_bag}"
-            f"{'' if _arg(context, 'record').lower() == 'true' else '  (disabled)'}\n"
-            f"  video bag     : {video_bag}  (starts at the trigger)\n"
+            f"saving to       : {save_dir}/{run_name}_<timestamp>/\n"
+            f"  one folder per trial, named at the trigger\n"
             f"display calib   : {display_cal or 'none -- experiment geometry'}\n"
             f"trigger zone    : {trigger_cal or 'none -- detector_params roi'}\n"
             f"detection camera: "
@@ -245,12 +242,11 @@ def generate_launch_description():
             condition=IfCondition(recording),
             parameters=[{"trigger_topic": trigger_topic,
                          "trigger_msg_type": "string",
-                         "assay_bag_dir": assay_bag,
+                         "save_dir": save_dir,
+                         "run_name": run_name,
                          "assay_exclude": exclude,
-                         "bag_dir": ParameterValue(
-                             PythonExpression(
-                                 ["'", video_bag, "' if ", want_video, " else ''"]),
-                             value_type=str),
+                         "record_video": ParameterValue(want_video,
+                                                        value_type=bool),
                          "video_topics": video_topics}])
 
         # The sketch exiting is what ends the run: it closes both bags. Target

@@ -70,6 +70,7 @@ Run:
 """
 
 import json
+import threading
 import os
 import sys
 
@@ -84,6 +85,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 from std_msgs.msg import Bool, String
+from std_srvs.srv import Trigger
 
 try:
     from . import assay
@@ -254,6 +256,19 @@ class StimulusPublisher(Node):
                 else f"{experiment.circle_diameter_px} px from the experiment file")
         self.get_logger().info(f"geometry: centres from {centres}; diameter {size}")
 
+        # Re-arm for the next animal without restarting the launch. A
+        # service rather than a topic: it has a reply, so the caller is
+        # told whether the rig is actually armed -- 'a trial is still
+        # running' has to come back as a refusal, not vanish.
+        # stimulus_state is published from two threads -- the sketch, on a
+        # trial change, and the executor, on the heartbeat. Each carries a
+        # snapshot taken before it publishes, so without serialising them
+        # a slow sketch thread can land an older phase after a newer one.
+        # Harmless in effect (the next heartbeat corrects it) but it makes
+        # the phase look like it is flapping, which costs real debugging
+        # time -- it cost some here.
+        self._state_lock = threading.Lock()
+        self._rearm_srv = self.create_service(Trigger, "~/rearm", self._on_rearm)
         assay.set_trial_change_callback(self._on_trial_change)
         if self._position_pub is not None:
             assay.set_position_callback(self._on_position)
@@ -343,8 +358,10 @@ class StimulusPublisher(Node):
             if not self._held_note:
                 self._held_note = True
                 self.get_logger().info(
-                    "trial over; stimuli cleared, background HELD on screen. "
-                    "Ctrl-C when you are ready -- that closes the bags.")
+                    "TRIAL COMPLETE -- bags closed, display still up.\n"
+                    "  Swap the animal, then re-arm for the next trial:\n"
+                    "      ros2 run mosquito_preference_assay rearm\n"
+                    "  Ctrl-C when you are done for the session.")
         elif assay.experiment_complete():
             now = self.get_clock().now().nanoseconds / 1e9
             if self._complete_since is None:
@@ -357,6 +374,17 @@ class StimulusPublisher(Node):
         elif self._sketch_was_running and not assay.sketch_running():
             self.get_logger().info("sketch window closed; shutting down")
             self.should_exit = True
+
+    def _on_rearm(self, _request, response):
+        ok, message = assay.rearm()
+        response.success = ok
+        response.message = message
+        if ok:
+            self._held_note = False          # so the hold note prints again
+            self.get_logger().info(f"RE-ARMED -- {message}")
+        else:
+            self.get_logger().warn(f"re-arm refused: {message}")
+        return response
 
     def _on_position(self, payload):
         """Called from the sketch thread once per drawn frame (~60 Hz)."""
@@ -371,7 +399,8 @@ class StimulusPublisher(Node):
             return
         msg = String()
         msg.data = assay.to_json(state)
-        self._state_pub.publish(msg)
+        with self._state_lock:
+            self._state_pub.publish(msg)
         if "trial_id" in state:
             self._trial_pub.publish(msg)
             self.get_logger().info(
@@ -384,12 +413,13 @@ class StimulusPublisher(Node):
             self.get_logger().info(f"phase={state['phase']} (run {state['run_id']})")
 
     def _publish_state(self):
-        payload = assay.current_state_json()
-        if payload is None:
-            return  # sketch not through its first trial yet
-        msg = String()
-        msg.data = payload
-        self._state_pub.publish(msg)
+        with self._state_lock:
+            payload = assay.current_state_json()
+            if payload is None:
+                return  # sketch not through its first trial yet
+            msg = String()
+            msg.data = payload
+            self._state_pub.publish(msg)
 
 
 def main(args=None):

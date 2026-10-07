@@ -1,18 +1,20 @@
 # Does a wandering target attract, and does wandering further attract more?
 #
-# Five stimuli, so ten possible pairings. mode: sample draws two distinct ones
+# Four stimuli, so six possible pairings. mode: sample draws two distinct ones
 # per trial, so across enough animals every pairing is sampled:
 #
 #     blank          nothing at all      -- is anything better than nothing?
 #     static_black   a still dark circle -- is MOTION doing the work, or is a
 #                                           dark target enough?
-#     jitter_25      wanders +/-25 px  ─┐
-#     jitter_50      wanders +/-50 px   ├ the dose-response
-#     jitter_75      wanders +/-75 px  ─┘
+#     jitter_25      wanders +/-25 px  ─┐ the contrast: a 3x step in how far
+#     jitter_75      wanders +/-75 px  ─┘ the target ranges
 #
-# The three jitters are one manipulation at three levels, evenly spaced 1:2:3.
-# Everything else about them is identical -- same fill, same noise_speed, same
-# diameter -- so amplitude is the only thing that varies across the set.
+# The two jitters differ in amplitude and nothing else -- same fill, same
+# noise_speed, same diameter. An earlier version of this file carried a third,
+# intermediate level (50 px) for a dose-response; two levels is a CONTRAST,
+# which answers "does more motion attract more" with far fewer animals (six
+# pairings rather than ten) but cannot show the shape of the relationship
+# between them.
 #
 # AMPLITUDE HAS A CEILING, set by the rig's geometry, not by taste. Two
 # circles jittering toward each other close the gap between them by twice the
@@ -28,28 +30,25 @@
 # a "preference" measured near the midline is not a preference between two
 # stimuli, it is a response to one merged object.
 #
-# SEEDS ARE INDEPENDENT per amplitude, which is a deliberate change from the
-# earlier two-jitter version of this file. There, both jitters shared seeds so
-# they traced the same path and differed in amplitude alone, with one mirrored
-# so they did not move in lockstep. That does not extend to three: with ten
-# pairings, any two shared-seed jitters paired together move as scaled copies
-# of each other, which reads as one object seen twice. Independent seeds cost
-# the exactly-matched path -- over a short window Perlin noise does not
-# reliably show a 2x amplitude as 2x the excursion (measured 1.57x) -- but the
-# dose-response here is carried by the SET across many animals, not by one
-# matched pair within a trial.
+# AMPLITUDE ALSO SCALES SPEED. It is a plain multiplier on position, so it
+# multiplies velocity identically: jitter_75 ranges 3x further AND moves 3x
+# faster. The variable is motion magnitude, not distance alone, and no
+# parameterisation separates them -- position is amplitude x noise.
 #
-# To go back to matched paths, give all three the same seed_x / seed_y and
-# accept lockstep when two of them are drawn together.
+# SEEDS ARE INDEPENDENT. seed_x/seed_y are offsets into a shared Perlin field
+# and sit far enough apart that a 15 s trial never reads overlapping stretches
+# of it, so the two wanders are unrelated paths rather than one path at two
+# sizes. Sharing seeds would make them scaled copies of each other, which
+# reads as one object seen twice when they are drawn side by side.
 #
 # WHAT VARIES BETWEEN ANIMALS. A jitter's position is a pure function of
 # elapsed time -- nothing is drawn per frame from a random source -- but the
 # Perlin field is re-seeded per run from master_seed, which is random unless
 # pinned. So each animal sees a different trajectory at the same amplitude.
-# That is unbiased across conditions, since all three jitters shift
-# together, but it is variance you are carrying. It cannot be removed by
-# pinning master_seed, because that also fixes which pair is drawn: every
-# animal would then see the same two stimuli.
+# That is unbiased across conditions, since both jitters shift together, but
+# it is variance you are carrying. It cannot be removed by pinning
+# master_seed, because that also fixes which pair is drawn: every animal would
+# then see the same two stimuli.
 #
 # ---------------------------------------------------------------------------
 # RIG SETUP LIVES ELSEWHERE. Nothing in this file is machine-specific, so the
@@ -66,7 +65,7 @@
 schema: mosquito_preference_assay/experiment/1
 name: sippell_retest_experiment
 description: >-
-  Blank and static-dark controls against three jitter amplitudes, to separate
+  Blank and static-dark controls against two jitter amplitudes, to separate
   "is it moving" from "how far is it moving". Stimulus position is published
   per frame on ~/stimulus_position so a flight track can be related to where
   the target actually was.
@@ -81,7 +80,7 @@ stimuli:
     type: static_dark
     params: {fill_gray: 20}
 
-  # --- 3-5. the dose-response. Identical but for amplitude. -----------------
+  # --- 3-4. the contrast. Identical but for amplitude. ---------------------
   jitter_25:
     type: jitter
     params:
@@ -100,15 +99,6 @@ stimuli:
       seed_x: 111.0
       seed_y: 777.0
 
-  jitter_50:
-    type: jitter
-    params:
-      fill_gray: 20
-      amplitude_px: 50
-      noise_speed: 1.2
-      seed_x: 222.0
-      seed_y: 888.0
-
   jitter_75:
     type: jitter
     params:
@@ -119,16 +109,15 @@ stimuli:
       seed_y: 999.0
 
 conditions:
-  # Two distinct stimuli per trial, drawn at random, sides randomised. Ten
-  # pairings now rather than six, so an even sample needs proportionally more
-  # animals -- if that is too many, mode: pairs below runs only the
-  # comparisons you care about.
+  # Two distinct stimuli per trial, drawn at random, sides randomised. Six
+  # pairings, sampled evenly across enough animals -- or use mode: pairs
+  # below to run only the comparisons you care about.
   mode: sample
 
   # mode: pairs
   # pairs:
-  #   - {a: jitter_25,    b: jitter_75}     # the amplitude question, widest step
-  #   - {a: static_black, b: jitter_50}     # does motion matter at all
+  #   - {a: jitter_25,    b: jitter_75}     # the amplitude question
+  #   - {a: static_black, b: jitter_75}     # does motion matter at all
   #   - {a: blank,        b: static_black}  # does a target matter at all
   #
   # {a, b} randomises which side each lands on; {left, right} pins them.

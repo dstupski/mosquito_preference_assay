@@ -146,6 +146,9 @@ _rt = {
     "phase": "armed",     # "armed" | "running" | "complete"
     "run_id": 0,          # increments each start_run(); 0 while never triggered
     "start_pending": False,  # set by start_run(), consumed by draw() on the sketch thread
+    # set by rearm(), consumed by draw(): building the next pairing needs
+    # the sketch thread, so rearm() only raises the flag.
+    "rearm_pending": False,
     "complete": False,
     "started": False,
 }
@@ -382,8 +385,25 @@ def draw():
         show_debug = _rt["show_debug"]
         phase = _rt["phase"]
         start_pending = _rt["start_pending"]
+        rearm_pending = _rt["rearm_pending"]
 
     py5.background(experiment.background_gray if experiment else 128)
+
+    if rearm_pending:
+        # A new animal. Build the next pairing here, on the sketch thread,
+        # and only then declare the rig armed -- the detector gates on that
+        # phase, so arming first would invite a trigger at a trial with no
+        # stimuli. The stimulus clock restarts with the new pair, which is
+        # right: these are different stimuli, not a continuation.
+        with _lock:
+            _rt["rearm_pending"] = False
+        if _cfg["stimuli_when_armed"]:
+            _prepare_trial()
+        with _lock:
+            _rt["phase"] = "armed"
+        print("[assay] ARMED for the next animal")
+        _notify_state()
+        return
 
     if start_pending:
         # A trigger arrived on another thread. py5 object creation must not
@@ -530,6 +550,11 @@ def start_run():
         if not _rt["started"]:
             print("[assay] trigger ignored -- the sketch is still starting up")
             return False
+        if _rt["rearm_pending"]:
+            # Mid re-arm: the next pairing is still being built. Refusing is
+            # right -- the alternative is a trial whose stimuli appear a frame
+            # after it started.
+            return False
         if _rt["phase"] != "armed":
             return False
         _rt["run_id"] += 1
@@ -551,6 +576,44 @@ def abort_run():
         _rt["left"] = None
         _rt["right"] = None
     print("[assay] run aborted -> ARMED")
+
+
+def rearm():
+    """Finish with this animal and get ready for the next, without restarting.
+
+    Only from "complete" -- re-arming mid-trial would discard a trial that is
+    still recording, so that is refused rather than silently obeyed.
+
+    A FRESH PAIRING is drawn from the master RNG, so the next animal does not
+    simply see a repeat of the last one. In stimuli_when_armed mode the new
+    pair is built and starts animating immediately, which means the display
+    visibly changes at this moment -- which is correct, because this runs
+    between animals, with the arena empty.
+
+    Returns (True, message) if the rig is now armed, (False, why) otherwise.
+    """
+    with _lock:
+        if not _rt["started"]:
+            return False, "the sketch is still starting up"
+        if _rt["phase"] == "armed":
+            return False, "already armed"
+        if _rt["phase"] == "running":
+            return False, ("a trial is still running -- wait for it to finish "
+                           "rather than discarding it")
+        # Deliberately NOT armed here. The next pairing has to be built on
+        # the sketch thread, and arming before it exists leaves a window in
+        # which the detector -- which watches this very phase -- can fire at a
+        # trial that does not yet have stimuli. draw() arms once it is ready.
+        _rt["complete"] = False
+        _rt["start_pending"] = False
+        _rt["left"] = None
+        _rt["right"] = None
+        _rt["stimulus_elapsed_at_trial_start"] = None
+        _rt["rearm_pending"] = True
+        want_stimuli = _cfg["stimuli_when_armed"]
+
+    return True, ("arming -- new pairing starting to play"
+                  if want_stimuli else "arming -- waiting for a mosquito")
 
 
 def phase():
@@ -690,8 +753,8 @@ def _begin_trial():
 def _finish_run():
     """The trial's time is up -- the run is done."""
     with _lock:
-        if _rt["phase"] == "complete":
-            return
+        if _rt["phase"] != "running":
+            return          # only a running trial can complete
         _rt["complete"] = True
         _rt["phase"] = "complete"
     print("[assay] trial complete")

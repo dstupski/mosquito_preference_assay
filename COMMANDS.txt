@@ -167,7 +167,21 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3c. how a run begins and ends ------------------------------------------
+# --- 3c. NEXT ANIMAL, without restarting ------------------------------------
+# When a trial finishes, swap the animal and run this in a SECOND terminal:
+
+ros2 run mosquito_preference_assay rearm
+
+# A new pairing is drawn and starts playing; the detector re-arms itself.
+# Each trial writes its OWN folder, named at the trigger:
+#     <save_dir>/trial_20261007_103440/{assay,video}
+#     <save_dir>/trial_20261007_103527/{assay,video}
+#
+# Refused while a trial is still running -- wait for it to finish.
+# Ctrl-C the launch when you are done for the session.
+
+
+# --- 3d. how a run begins and ends ------------------------------------------
 # Recording starts AT THE TRIGGER -- nothing is written while waiting for an
 # animal. BOTH bags close when the trial ends, automatically.
 #
@@ -179,13 +193,13 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 #     hold_after_trial:=false
 
 
-# --- 3d. without the always-on stimuli (circles appear at detection) --------
+# --- 3e. without the always-on stimuli (circles appear at detection) --------
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
     save_dir:=/data/mosquito/$(date +%F)
 
 
-# --- 3e. useful variations --------------------------------------------------
+# --- 3f. useful variations --------------------------------------------------
 
 # name the run folder after the animal
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
@@ -270,9 +284,8 @@ ls $RUN/assay/metadata.yaml $RUN/video/metadata.yaml
 
 ls ~/ros2_ws/src/mosquito_preference_assay/experiments/
 
-#   sippell_retest_experiment  5 conditions: blank, static dark, and three
-#                              jitter amplitudes (25 / 50 / 75 px) -- a
-#                              dose-response. 10 pairings.
+#   sippell_retest_experiment  4 conditions: blank, static dark, and two
+#                              jitter amplitudes (25 / 75 px). 6 pairings.
 #   ten_stimulus_panel         10 stimuli, white background
 #   two_choice_default         the built-in default
 #   control_vs_grating         simple two-condition control

@@ -45,6 +45,7 @@ dropped and gc'd deliberately.
 """
 
 import gc
+import datetime
 import json
 import os
 import re
@@ -79,8 +80,9 @@ _LIVE_QOS = QoSProfile(depth=100, reliability=QoSReliabilityPolicy.RELIABLE)
 class AssayWriter:
     """Pre-subscribed, in-process bag. Subscribe at launch, write from trigger."""
 
-    def __init__(self, node, bag_dir, topics, exclude):
-        self.node, self.bag_dir, self.exclude = node, bag_dir, exclude
+    def __init__(self, node, topics, exclude, enabled=True):
+        self.node, self.exclude, self.enabled = node, exclude, enabled
+        self.bag_dir = None
         self.writer = None
         self.closed = False
         self.started_at = None
@@ -94,7 +96,7 @@ class AssayWriter:
             self._subscribe(topic, type_str, latched)
 
     def _subscribe(self, topic, type_str, latched):
-        if topic in self._known or not self.bag_dir:
+        if topic in self._known or not self.enabled:
             return
         try:
             msg_type = get_message(type_str)
@@ -122,9 +124,10 @@ class AssayWriter:
         self.writer.write(topic, raw, now)
         self.count += 1
 
-    def start(self):
+    def start(self, bag_dir):
         """Open the bag. Runs in the executor thread, so no message can land
         between opening the writer and flushing the latched cache."""
+        self.bag_dir = bag_dir
         if self.writer is not None or not self.bag_dir:
             return
         os.makedirs(os.path.dirname(os.path.abspath(self.bag_dir)) or ".",
@@ -148,6 +151,19 @@ class AssayWriter:
         self.node.get_logger().info(
             f"  assay bag -> {self.bag_dir} "
             f"({len(self._latched)} latched messages carried over)")
+
+    def reset(self):
+        """Ready for another trial. The SUBSCRIPTIONS stay -- they are the
+        whole point of this class, and re-creating them would reintroduce
+        the discovery cost at the next trigger. Only the writer state is
+        cleared; the latched cache keeps filling from the live
+        subscriptions, so the next bag opens with that trial's own
+        definition rather than the previous one's."""
+        self.writer = None
+        self.bag_dir = None
+        self.closed = False
+        self.started_at = None
+        self.count = 0
 
     def adopt_remaining_topics(self):
         """Pick up everything else in the graph at the trigger. These get the
@@ -193,13 +209,15 @@ class AssayWriter:
 class Recorder:
     """One `ros2 bag record` child process -- used for the camera feeds."""
 
-    def __init__(self, node, name, bag_dir, args):
-        self.node, self.name, self.bag_dir, self.args = node, name, bag_dir, args
+    def __init__(self, node, name, args):
+        self.node, self.name, self.args = node, name, args
+        self.bag_dir = None
         self.proc = None
         self.started_at = None
         self.closed = False
 
-    def start(self):
+    def start(self, bag_dir):
+        self.bag_dir = bag_dir
         if self.proc is not None or not self.bag_dir:
             return
         os.makedirs(os.path.dirname(os.path.abspath(self.bag_dir)) or ".",
@@ -211,6 +229,12 @@ class Recorder:
         self.proc = subprocess.Popen(cmd, start_new_session=True)
         self.node.get_logger().info(
             f"  {self.name} bag -> {self.bag_dir} (pid {self.proc.pid})")
+
+    def reset(self):
+        self.proc = None
+        self.bag_dir = None
+        self.closed = False
+        self.started_at = None
 
     def stop(self, timeout):
         if self.closed:
@@ -242,8 +266,14 @@ class TrialRecorderNode(Node):
         self.state_topic = str(self.declare_parameter(
             "state_topic", "/stimulus_publisher/stimulus_state").value).strip()
 
-        video_dir = str(self.declare_parameter("bag_dir", "").value).strip()
-        assay_dir = str(self.declare_parameter("assay_bag_dir", "").value).strip()
+        # One folder PER TRIAL, named at the trigger -- the launch file
+        # cannot name them, because it runs once and a session now holds
+        # as many trials as you re-arm for. The timestamp is the trigger
+        # time, which is also more meaningful than launch time.
+        self.save_dir = str(self.declare_parameter("save_dir", "").value).strip()
+        self.run_name = str(
+            self.declare_parameter("run_name", "trial").value).strip() or "trial"
+        self.want_video = bool(self.declare_parameter("record_video", True).value)
         topics = self.declare_parameter("video_topics", [
             "/cam_sync/cam0/image_raw", "/cam_sync/cam1/image_raw"]).value
         video_topics = [str(t) for t in topics if str(t).strip()]
@@ -261,8 +291,10 @@ class TrialRecorderNode(Node):
             # the bag it started.
             critical.append((self.trigger_topic, "std_msgs/msg/String", True))
 
-        self.assay = AssayWriter(self, assay_dir, critical, exclude)
-        self.video = Recorder(self, "video", video_dir, video_topics)
+        self.assay = AssayWriter(self, critical, exclude,
+                                 enabled=bool(self.save_dir))
+        self.video = Recorder(self, "video", video_topics)
+        self.trial_no = 0
         self._grace_timer = None
         # Set when completion is first SEEN, not when the bag closes: between
         # them is close_grace_sec of 10 Hz heartbeats still reporting
@@ -278,26 +310,49 @@ class TrialRecorderNode(Node):
         self.get_logger().info(
             f"trial_recorder ARMED on '{self.trigger_topic}' ({msg_type}) -- "
             f"subscribed, recording nothing.\n"
-            f"  on trigger: assay -> {assay_dir or '(disabled)'}\n"
-            f"              video -> {video_dir or '(disabled)'}"
-            f"  [{', '.join(video_topics) or 'no topics'}]")
+            f"  each trial -> {self.save_dir or '(recording disabled)'}/"
+            f"{self.run_name}_<timestamp>/{{assay,video}}\n"
+            f"  video topics: "
+            f"{', '.join(video_topics) if self.want_video else '(video off)'}")
 
     def _on_trigger(self, msg):
         # A Bool trigger counts only when True; a String event always does.
         if isinstance(msg, Bool) and not msg.data:
             return
         if self.assay.writer is not None or self.video.proc is not None:
-            return                                  # one trial, one pair of bags
-        self.get_logger().info("TRIGGER -- recording starts now")
-        self.assay.start()              # first: this is the one that must be fast
+            return                          # this trial already has its bags
+        if not self.save_dir:
+            self.get_logger().info("TRIGGER -- recording disabled, nothing written")
+            return
+
+        self.trial_no += 1
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = os.path.abspath(os.path.expanduser(
+            os.path.join(self.save_dir, f"{self.run_name}_{stamp}")))
+        self.get_logger().info(
+            f"TRIGGER -- trial {self.trial_no}, recording to {run_dir}")
+
+        # assay first: it is the one that must be fast
+        self.assay.start(os.path.join(run_dir, "assay"))
         self.assay.adopt_remaining_topics()
-        self.video.start()
+        if self.want_video:
+            self.video.start(os.path.join(run_dir, "video"))
 
     def _on_state(self, msg):
         try:
             phase = json.loads(msg.data).get("phase")
         except (ValueError, AttributeError):
             return
+        # Re-armed for the next animal: let the next trigger open new bags.
+        # _closing is a one-way latch within a trial, so without clearing it
+        # here the SECOND trial would record and never close -- losing it.
+        if phase == "armed" and self._closing and self.assay.closed:
+            self._closing = False
+            self.assay.reset()
+            self.video.reset()
+            self.get_logger().info("re-armed -- ready to record the next trial")
+            return
+
         if phase != "complete" or self._closing:
             return
         self._closing = True

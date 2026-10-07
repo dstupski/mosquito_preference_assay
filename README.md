@@ -27,7 +27,8 @@ graphics; ROS 2 Humble for the plumbing.
 [**running the real experiment**](#running-the-real-experiment) ·
 [the trigger zone](#setting-the-trigger-region-for-a-new-rig) ·
 [triggering](#triggering) ·
-[stimuli always playing](#stimuli-playing-the-whole-time--avoiding-an-onset-transient)
+[stimuli always playing](#stimuli-playing-the-whole-time--avoiding-an-onset-transient) ·
+[**several animals in one launch**](#running-several-animals-in-one-launch)
 
 **Tracking the animal** — [detecting a mosquito](#detecting-a-mosquito) ·
 [stereo tracking](#real-time-stereo-tracking) ·
@@ -536,22 +537,23 @@ It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
 is sampled across enough animals); the file's header comment shows the
 `mode: pairs` block to paste in for a control-versus-each design instead.
 
-### The jitter dose-response — `sippell_retest_experiment`
+### The jitter contrast — `sippell_retest_experiment`
 
-The five-condition study this package is currently set up to run:
+The four-condition study this package is currently set up to run:
 
 | Name | Type | What it does |
 |---|---|---|
 | `blank` | `blank` | nothing drawn — is anything better than nothing? |
 | `static_black` | `static_dark` | motionless dark circle — is *motion* doing the work? |
-| `jitter_25` | `jitter` | wanders ±25 px ┐ |
-| `jitter_50` | `jitter` | wanders ±50 px ├ one manipulation, three levels |
+| `jitter_25` | `jitter` | wanders ±25 px ┐ one manipulation, a 3× step |
 | `jitter_75` | `jitter` | wanders ±75 px ┘ |
 
-`mode: sample` draws two distinct stimuli per trial, so the ten pairings are
-sampled across enough animals. That is nearly twice the six pairings of a
-four-stimulus design — if it is too many animals, the file's header shows the
-`mode: pairs` form for running only the comparisons you care about.
+`mode: sample` draws two distinct stimuli per trial, so the six pairings are
+sampled across enough animals. An earlier version carried an intermediate
+50 px level for a dose-response; two levels is a **contrast**, which answers
+"does more motion attract more" with far fewer animals but cannot show the
+shape of the relationship. The file's header has the `mode: pairs` form for
+running only the comparisons you care about.
 
 **Amplitude has a ceiling set by the rig, not by taste.** Two circles
 jittering toward each other close the gap between them by twice the amplitude:
@@ -568,13 +570,12 @@ it. **If the circles can touch, a preference measured near the midline is not
 a preference between two stimuli** — it is a response to one merged object.
 
 **Amplitude scales speed too.** Amplitude is a plain multiplier on position, so
-it multiplies velocity identically — the three levels are 1:2:3 in *both*
+it multiplies velocity identically — the two levels are 3× apart in *both*
 excursion and speed:
 
 | | excursion | mean speed |
 |---|---|---|
 | `jitter_25` | 50 px | 20 px/s |
-| `jitter_50` | 99 px | 40 px/s |
 | `jitter_75` | 149 px | 60 px/s |
 
 So the variable is **motion magnitude**, not "how far" alone: a preference for
@@ -584,11 +585,11 @@ changes the temporal frequency instead, trading one confound for another.
 There is no parameterisation that separates them, because position is
 amplitude × noise and that is the whole model.
 
-**The three wanders are independent, not scaled copies.** `seed_x`/`seed_y`
+**The two wanders are independent, not scaled copies.** `seed_x`/`seed_y`
 are offsets into a shared Perlin field, and the seeds sit 111 apart while a
-15 s trial advances only 18 units through it — so the three never read
+15 s trial advances only 18 units through it — so the two never read
 overlapping stretches. Simulated over 200 runs the pairwise correlation is
-+0.04 / −0.00 / +0.01. (An earlier two-jitter version shared seeds so the pair
+≈ 0. (An earlier two-jitter version shared seeds so the pair
 traced one path at two sizes; that does not extend to three, because any two
 shared-seed jitters drawn together move as scaled copies of each other and
 read as one object seen twice.)
@@ -1119,6 +1120,47 @@ trial_duration_sec              = 15.0
 
 It applies to triggered mode only, and the default (`false`) is unchanged:
 armed carries no stimuli, and the trigger builds them.
+
+### Running several animals in one launch
+
+A trial ends, you swap the animal, and you re-arm — without restarting
+anything:
+
+```bash
+ros2 run mosquito_preference_assay rearm
+```
+
+Run it from a second terminal. A **fresh pairing** is drawn from the master
+RNG and starts playing, and the detector — which holds fire until the display
+reports armed — resumes on its own. The projector never goes dark, so the
+arena's light environment stays constant across the whole session.
+
+**Each trial writes its own folder**, named at the trigger:
+
+```
+/data/mosquito/2026-10-07/
+    trial_20261007_103440/   assay/  video/
+    trial_20261007_103527/   assay/  video/
+```
+
+So `read_trial.py` works unchanged, one folder at a time.
+
+Re-arming is **refused while a trial is running** — the alternative is
+discarding a trial that is still recording:
+
+```
+not armed: a trial is still running -- wait for it to finish rather than discarding it
+```
+
+It is deliberately manual. An automatic re-arm would happily fire on your hand
+as you reach into the arena to change animals.
+
+The rig does not arm the instant you call it: the next pairing has to be built
+on the sketch thread first, and the detector gates on exactly the phase that
+arming sets. Arming before the stimuli existed would invite a trigger at a
+trial with nothing on screen, so the phase flips only once the new pair is
+actually playing — a few milliseconds later, and reported as
+`ARMED for the next animal`.
 
 ### Keeping the background up between animals
 

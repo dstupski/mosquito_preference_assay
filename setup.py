@@ -30,6 +30,7 @@ setup(
             "test_trigger = mosquito_preference_assay.test_trigger_node:main",
             "display_check = mosquito_preference_assay.display_check_node:main",
             "trigger_roi = mosquito_preference_assay.trigger_roi_node:main",
+            "rearm = mosquito_preference_assay.rearm_node:main",
             "trial_recorder = "
             "mosquito_preference_assay.trial_recorder_node:main",
             "snapshot_supervisor = "
