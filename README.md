@@ -20,7 +20,7 @@ graphics; ROS 2 Humble for the plumbing.
 
 **Running the assay** — [setting up a new experiment](#setting-up-a-new-experiment-step-by-step) ·
 [writing an experiment](#writing-an-experiment) ·
-[**the jitter dose-response**](#the-jitter-dose-response--sippell_retest_experiment) ·
+[**the jitter contrast**](#the-jitter-contrast--sippell_retest_experiment) ·
 [the stimulus display](#the-stimulus-display) ·
 [deploying to another rig](#deploying-to-another-rig) ·
 [where does this setting go?](#where-does-this-setting-go) ·
@@ -322,7 +322,7 @@ Drag the box over the arena, `s` to save. Green boxes in the overlay are blobs
 that would fire a trial; grey ones are ignored. Details in
 [setting the trigger region](#setting-the-trigger-region-for-a-new-rig).
 
-**7. Run an animal.**
+**7. Run the session.**
 
 ```bash
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
@@ -330,10 +330,28 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     save_dir:=/data/mosquito/$(date +%F)
 ```
 
-One launch = one animal = one run folder. Your camera package must already be
-publishing. Recording starts at the trigger and both bags close when the trial
-ends; the display then stays up so the arena's light does not change between
-animals — Ctrl-C when you are ready for the next one.
+Your camera package must already be publishing. Recording starts at the
+trigger, and both bags close when the trial ends.
+
+**One launch runs a whole session.** When a trial finishes, the display stays
+up — so the arena's light never changes — and the launch terminal tells you
+what to do next:
+
+```
+TRIAL COMPLETE -- bags closed, display still up.
+  Swap the animal, then re-arm for the next trial:
+      ros2 run mosquito_preference_assay rearm
+```
+
+Swap the animal, then in a **second terminal**:
+
+```bash
+ros2 run mosquito_preference_assay rearm
+```
+
+That draws a fresh pairing, starts it playing, and re-arms the detector.
+Repeat per animal; each trial writes its own folder. Ctrl-C the launch only
+when the session is over — by then every trial's data is already closed.
 
 ### Running a different setup
 
@@ -1232,6 +1250,10 @@ Arguments it shares: `params_file`, `experiment_file`, `fullscreen`, `monitor`,
 `arena_experiment.launch.py` is the one you run with an animal in the arena.
 It assumes your stereo camera package is **already publishing** — it starts no
 cameras.
+
+**One launch, many animals.** Launch once at the start of the session; after
+each trial, swap the animal and run `rearm` in a second terminal. See
+[running several animals in one launch](#running-several-animals-in-one-launch).
 
 ```bash
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \

@@ -131,8 +131,9 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 # zone, your monitor and your detection camera on its own -- everything
 # calibrated in section 1 is applied without being named here.
 #
-# It ends by itself: trial runs 15 s, the sketch exits, both bags close.
-# One launch = one animal = one run folder. Re-run it for the next animal.
+# The trial runs 15 s and both bags close by themselves. The display STAYS
+# UP and the launch keeps running -- see 3c to re-arm for the next animal.
+# One launch = one SESSION; Ctrl-C only when you are done for the day.
 
 
 # --- 3a. VERIFY BY EYE which stimulus is on which side ----------------------
