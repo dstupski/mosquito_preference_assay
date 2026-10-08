@@ -105,6 +105,44 @@ def resolve_trigger_config(spec=""):
     return path if os.path.exists(path) else None
 
 
+def detector_setting(key, *paths, node="mosquito_detector"):
+    """Read one of the detector's settings the way the DETECTOR would see it,
+    whatever its params file happens to be keyed by.
+
+    ROS matches a params file's top-level key against the node's own name, so
+    a file written as `mosquito_detector:` reaches the detector and nothing
+    else. Any tool that wants to SHOW what the detector is using -- arena_view
+    -- is a different node, and would silently see nothing. That looks like
+    the setting being ignored when it is only being delivered elsewhere.
+
+    Later paths win, matching how the launch files layer them. Returns None if
+    no file carries the key.
+    """
+    import yaml
+
+    found = None
+    for path in paths:
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            with open(path) as handle:
+                doc = yaml.safe_load(handle) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        # "/**" applies to every node; the node's own name applies to it; a
+        # single-key file is unambiguous whatever it is called.
+        candidates = ["/**", node]
+        if len(doc) == 1:
+            candidates.append(next(iter(doc)))
+        for candidate in candidates:
+            params = (doc.get(candidate) or {}).get("ros__parameters", {})
+            if isinstance(params, dict) and params.get(key) not in (None, ""):
+                found = params[key]
+    return found
+
+
 def resolve_config(name):
     """Absolute path to the params file a launch file should default to:
     the `.local.yaml` next to it if that exists, otherwise the shipped one.

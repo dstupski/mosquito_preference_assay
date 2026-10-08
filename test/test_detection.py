@@ -112,3 +112,29 @@ def test_polarity_rejects_a_bad_value():
     with pytest.raises(ValueError, match="polarity"):
         find_candidates(blank, blank, diff_threshold=25, min_area=1.0,
                         max_area=10.0, morph_kernel=3, polarity="sideways")
+
+
+def test_detector_setting_reads_any_params_key(tmp_path):
+    """A params file keyed by the detector's NODE NAME reaches the detector and
+    nothing else, so a viewer that is a different node must not depend on the
+    key -- it would report no zone while the detector happily had one."""
+    from mosquito_preference_assay.config_paths import detector_setting
+
+    node_keyed = tmp_path / "node.yaml"
+    node_keyed.write_text(
+        'mosquito_detector:\n  ros__parameters:\n    roi: "444,333,999,888"\n')
+    assert detector_setting("roi", str(node_keyed)) == "444,333,999,888"
+
+    wildcard = tmp_path / "wild.yaml"
+    wildcard.write_text('/**:\n  ros__parameters:\n    roi: "1,2,3,4"\n')
+    assert detector_setting("roi", str(wildcard)) == "1,2,3,4"
+
+    # later files win, matching how the launch files layer them
+    assert detector_setting("roi", str(wildcard), str(node_keyed)) == "444,333,999,888"
+
+    # absent, empty, and missing files all read as "not set"
+    blank = tmp_path / "blank.yaml"
+    blank.write_text('/**:\n  ros__parameters:\n    roi: ""\n')
+    assert detector_setting("roi", str(blank)) is None
+    assert detector_setting("roi", str(tmp_path / "nope.yaml")) is None
+    assert detector_setting("roi") is None

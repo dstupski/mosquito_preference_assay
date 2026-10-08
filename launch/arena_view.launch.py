@@ -21,6 +21,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from mosquito_preference_assay.config_paths import (
+    detector_setting,
     resolve_config,
     resolve_trigger_config,
 )
@@ -53,8 +54,16 @@ def generate_launch_description():
         # onto that camera whatever `camera:=` said.
         if image_topic:
             overrides["image_topic"] = image_topic
-        if arg("roi"):
-            overrides["roi"] = arg("roi")
+        # Read the zone out of the files rather than relying on ROS to
+        # deliver it: this node is not called mosquito_detector, so a params
+        # file keyed by that node name would reach the detector and not us --
+        # the window would then report no zone while the detector happily had
+        # one. Explicit beats a silent mismatch here, since the whole point is
+        # to show what the detector is using.
+        roi = arg("roi") or detector_setting(
+            "roi", arg("params_file"), zone)
+        if roi:
+            overrides["roi"] = str(roi)
 
         return [
             LogInfo(msg=(
