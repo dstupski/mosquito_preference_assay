@@ -1522,8 +1522,16 @@ pairings, which looks like a rendering fault and is really a launch that never
 exited — so the window says so outright rather than leaving you to work it
 out.
 
-It reads the same config the detector reads, so the box on screen is the box
-that fires trials. Defaults to **cam1**; `camera:=cam0` for the other one.
+**It shows what the detector sees.** Camera *and* zone both come from the
+same files the detector reads, so this is a check on the real configuration
+rather than a picture of it — the feed and the box on it always belong to the
+same device. `camera:=cam1` or `roi:=` override that, which is fine for a look
+but makes the window show something the detector is not using.
+
+Both are read out of the config files directly rather than through ROS
+parameter delivery, because a params file keyed by the detector's node name
+(`mosquito_detector:` rather than `/**:`) reaches the detector and not this
+node — which looked exactly like the zone being ignored.
 `display_hz:=5` renders less often on a loaded machine — it drops frames
 before converting them, so the window never competes with the detector for CPU
 during a trial.

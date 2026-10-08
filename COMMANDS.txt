@@ -181,27 +181,51 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3c. WATCH THE ARENA  (TERMINAL 3, optional) ----------------------------
-# A live camera feed with the trigger zone outlined -- the only place a
-# mosquito can start a trial. Read-only; start it any time, before or during
-# the experiment, and leave it open all session.
+# --- 3c. SEE WHAT THE DETECTOR SEES  (TERMINAL 3, optional) -----------------
+# A live feed from the DETECTION camera with its trigger zone outlined -- the
+# only place a mosquito can start a trial. Read-only; start it any time,
+# before or during the experiment, and leave it open all session.
 
 source ~/ros2_ws/install/setup.bash
 ros2 launch mosquito_preference_assay arena_view.launch.py
 
+# NO ARGUMENTS NEEDED. Camera and zone both come from the same files the
+# detector reads -- detector_params(.local).yaml, then trigger_roi.local.yaml
+# if you have one -- so this is a check on the real configuration, not a
+# picture of it. It prints what it resolved and where from:
+#
+#   arena view -- the detector's camera and zone
+#     camera : /cam_sync/cam0/image_raw
+#     zone   : 321,222,1111,901
+#     from   : .../config/detector_params.local.yaml
+#
 # It blocks this terminal. q or Esc closes it; the experiment is unaffected,
 # and you can reopen it mid-session without disturbing anything.
 #
 #   ARMED (green box)      a mosquito entering the box starts a trial NOW
 #   NOT ARMED (grey box)   it would not -- mid-trial, finished, or starting up
 #   LEFT ... RIGHT ...     which stimulus is on which side
-#
-# Other camera, or a quieter render on a loaded machine:
-ros2 launch mosquito_preference_assay arena_view.launch.py camera:=cam0
-ros2 launch mosquito_preference_assay arena_view.launch.py display_hz:=5
 
-# "2 EXPERIMENTS RUNNING" on screen means an earlier launch never exited --
-# the banner will flicker between their pairings until you stop it:
+# --- PROVE it matches, rather than trusting the picture ---------------------
+# The detector prints one line when it starts, in TERMINAL 2:
+#
+#   watching '/cam_sync/cam0/image_raw' (qos=sensor_data), roi=(321, 222, 1111, 901)
+#
+# The camera and zone there must match what the view printed. If they differ,
+# the window is showing you something the detector is not using -- do not
+# trust it until they agree.
+
+# --- variations --------------------------------------------------------------
+ros2 launch mosquito_preference_assay arena_view.launch.py camera:=cam1
+ros2 launch mosquito_preference_assay arena_view.launch.py display_hz:=5
+ros2 launch mosquito_preference_assay arena_view.launch.py roi:=100,100,900,800
+
+# NOTE: camera:= and roi:= make the window show something the detector is NOT
+# using. Fine for a quick look, wrong for checking the rig.
+
+# "NO ZONE SET" means no roi in any config -- the WHOLE FRAME can trigger.
+# "2 EXPERIMENTS RUNNING" means an earlier launch never exited; the banner
+# flickers between their pairings until you stop it:
 #     ps -eo pid,etimes,args | grep [s]timulus_publisher
 
 

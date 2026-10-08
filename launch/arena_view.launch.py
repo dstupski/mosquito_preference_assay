@@ -6,11 +6,14 @@ Read-only. Open it in a spare terminal beside a running experiment and leave
 it there. It shows the only region of the frame where a mosquito can start a
 trial; everything outside is dimmed.
 
-It layers the same files the detector does -- detector_params then the saved
-trigger zone -- so the box on screen is the box that fires trials. Pointing it
-somewhere else would make it a decoration rather than a check.
+IT SHOWS WHAT THE DETECTOR SEES. Camera and zone both come from the same files
+the detector reads -- detector_params then the saved trigger zone -- so this
+is a check on the real configuration rather than a picture of it. Both are
+read out of the files directly rather than through ROS parameter delivery,
+because a params file keyed by the detector's node name reaches the detector
+and not this node.
 
-    camera:=cam0       watch the other camera
+    camera:=cam0       watch a different camera than the detector's
     display_hz:=5      render less often on a loaded machine
     roi:=""            override the zone (rarely what you want)
 """
@@ -36,13 +39,25 @@ def generate_launch_description():
             return LaunchConfiguration(name).perform(context).strip()
 
         cam0, cam1 = arg("cam0_topic"), arg("cam1_topic")
-        chosen = arg("camera")
-        image_topic = {"cam0": cam0, "cam1": cam1}.get(chosen, chosen)
-        if chosen and not image_topic:
-            raise RuntimeError(
-                f"camera={chosen!r} is not cam0, cam1, or a topic name")
-
         zone = resolve_trigger_config(arg("trigger_config"))
+
+        chosen = arg("camera")
+        if chosen:
+            image_topic = {"cam0": cam0, "cam1": cam1}.get(chosen, chosen)
+        else:
+            # Follow the DETECTOR's camera, so the feed and the zone drawn on
+            # it belong to the same device. Showing cam1 with a box measured
+            # on cam0 would be worse than showing nothing: it looks correct.
+            image_topic = detector_setting(
+                "image_topic", arg("params_file"), zone) or cam1
+
+        # Read the zone out of the files rather than relying on ROS to
+        # deliver it: this node is not called mosquito_detector, so a params
+        # file keyed by that node name would reach the detector and not us --
+        # the window would then report no zone while the detector happily had
+        # one. Explicit beats a silent mismatch here, since the whole point is
+        # to show what the detector is using.
+        roi = arg("roi") or detector_setting("roi", arg("params_file"), zone)
 
         overrides = {
             "image_qos": arg("image_qos") or "sensor_data",
@@ -54,22 +69,15 @@ def generate_launch_description():
         # onto that camera whatever `camera:=` said.
         if image_topic:
             overrides["image_topic"] = image_topic
-        # Read the zone out of the files rather than relying on ROS to
-        # deliver it: this node is not called mosquito_detector, so a params
-        # file keyed by that node name would reach the detector and not us --
-        # the window would then report no zone while the detector happily had
-        # one. Explicit beats a silent mismatch here, since the whole point is
-        # to show what the detector is using.
-        roi = arg("roi") or detector_setting(
-            "roi", arg("params_file"), zone)
         if roi:
             overrides["roi"] = str(roi)
 
         return [
             LogInfo(msg=(
-                f"arena view\n"
+                f"arena view -- the detector's camera and zone\n"
                 f"  camera : {image_topic}\n"
-                f"  zone   : {zone or 'none -- detector_params roi'}")),
+                f"  zone   : {roi or 'NONE -- the whole frame can trigger'}\n"
+                f"  from   : {zone or arg('params_file')}")),
             Node(package="mosquito_preference_assay", executable="arena_view",
                  name="arena_view", output="screen",
                  parameters=[LaunchConfiguration("params_file"),
@@ -78,7 +86,7 @@ def generate_launch_description():
         ]
 
     return LaunchDescription([
-        DeclareLaunchArgument("camera", default_value="cam1"),
+        DeclareLaunchArgument("camera", default_value=""),
         DeclareLaunchArgument("cam0_topic", default_value=DEFAULT_CAM0),
         DeclareLaunchArgument("cam1_topic", default_value=DEFAULT_CAM1),
         DeclareLaunchArgument("image_qos", default_value="sensor_data"),
