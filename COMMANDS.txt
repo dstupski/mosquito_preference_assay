@@ -118,7 +118,14 @@ ros2 topic hz /cam_sync/cam1/image_raw
  3. RUN THE SIPPELL RETEST  <<< THE MAIN EVENT >>>
 -------------------------------------------------------------------------------
 
- TERMINAL 1 -- cameras (section 2), left running.
+ A SESSION USES UP TO FOUR TERMINALS. Each of the ros2 ones needs its own
+ `source ~/ros2_ws/install/setup.bash` first.
+
+     1   cameras            your package, blocks, left running (section 2)
+     2   the experiment     blocks for the whole session
+     3   arena view         blocks; optional, see 3c
+     4   rearm              one command per animal, see 3d
+
  TERMINAL 2 -- the session. Check the disk is mounted and has room first: a
  missing /mnt/data is not noticed until the trigger fires, mid-trial.
 
@@ -141,6 +148,8 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 
 
 # --- 3a. VERIFY BY EYE which stimulus is on which side ----------------------
+# (3c shows the same thing on the live video; this is the terminal-only
+#  version, for when you are not at the rig.)
 # In a spare terminal, while the run is up. With stimuli_when_armed: true the
 # sides are known while still ARMED, so you can stand at the arena and check
 # the projection before an animal is introduced.
@@ -172,19 +181,34 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3c. WATCH THE ARENA (optional, any time) -------------------------------
+# --- 3c. WATCH THE ARENA  (TERMINAL 3, optional) ----------------------------
 # A live camera feed with the trigger zone outlined -- the only place a
-# mosquito can start a trial. Read-only; leave it open all session.
+# mosquito can start a trial. Read-only; start it any time, before or during
+# the experiment, and leave it open all session.
 
+source ~/ros2_ws/install/setup.bash
 ros2 launch mosquito_preference_assay arena_view.launch.py
+
+# It blocks this terminal. q or Esc closes it; the experiment is unaffected,
+# and you can reopen it mid-session without disturbing anything.
+#
+#   ARMED (green box)      a mosquito entering the box starts a trial NOW
+#   NOT ARMED (grey box)   it would not -- mid-trial, finished, or starting up
+#   LEFT ... RIGHT ...     which stimulus is on which side
+#
+# Other camera, or a quieter render on a loaded machine:
 ros2 launch mosquito_preference_assay arena_view.launch.py camera:=cam0
+ros2 launch mosquito_preference_assay arena_view.launch.py display_hz:=5
 
-# q or Esc closes it. The experiment is unaffected.
+# "2 EXPERIMENTS RUNNING" on screen means an earlier launch never exited --
+# the banner will flicker between their pairings until you stop it:
+#     ps -eo pid,etimes,args | grep [s]timulus_publisher
 
 
-# --- 3d. NEXT ANIMAL, without restarting ------------------------------------
-# When a trial finishes, swap the animal and run this in a SECOND terminal:
+# --- 3d. NEXT ANIMAL, without restarting  (TERMINAL 4) ----------------------
+# When a trial finishes, swap the animal and run:
 
+source ~/ros2_ws/install/setup.bash
 ros2 run mosquito_preference_assay rearm
 
 # A new pairing is drawn and starts playing; the detector re-arms itself.

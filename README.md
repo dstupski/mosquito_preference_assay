@@ -333,6 +333,16 @@ ros2 launch mosquito_preference_assay arena_experiment.launch.py \
 Your camera package must already be publishing. Recording starts at the
 trigger, and both bags close when the trial ends.
 
+A session uses a few terminals, each needing its own
+`source ~/ros2_ws/install/setup.bash`:
+
+| | |
+|---|---|
+| 1 | your camera package — blocks |
+| 2 | the experiment above — blocks for the whole session |
+| 3 | [`arena_view`](#setting-the-trigger-region-for-a-new-rig) — optional, blocks |
+| 4 | `rearm`, one command per animal |
+
 **One launch runs a whole session.** When a trial finishes, the display stays
 up — so the arena's light never changes — and the launch terminal tells you
 what to do next:
@@ -1481,9 +1491,16 @@ Setting it is part of commissioning a rig, not an optimisation.
 
 **Watching it during a run: `arena_view`.**
 
+Start it in **its own terminal**, any time — before the experiment or
+part-way through a session — and leave it open:
+
 ```bash
+source ~/ros2_ws/install/setup.bash
 ros2 launch mosquito_preference_assay arena_view.launch.py
 ```
+
+It blocks that terminal, and `q` or Esc closes it. The experiment is
+unaffected either way, so you can open and close it mid-session freely.
 
 A live camera feed with the trigger zone drawn on it — the only region where
 a mosquito can start a trial — and everything outside dimmed. Read-only and
