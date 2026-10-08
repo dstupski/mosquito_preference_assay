@@ -172,7 +172,17 @@ ros2 topic echo /stimulus_publisher/stimulus_position  # ~60 Hz, x/y of each
 #   [assay] trial 0 START (stimuli already playing 7.9s)
 
 
-# --- 3c. NEXT ANIMAL, without restarting ------------------------------------
+# --- 3c. WATCH THE ARENA (optional, any time) -------------------------------
+# A live camera feed with the trigger zone outlined -- the only place a
+# mosquito can start a trial. Read-only; leave it open all session.
+
+ros2 launch mosquito_preference_assay arena_view.launch.py
+ros2 launch mosquito_preference_assay arena_view.launch.py camera:=cam0
+
+# q or Esc closes it. The experiment is unaffected.
+
+
+# --- 3d. NEXT ANIMAL, without restarting ------------------------------------
 # When a trial finishes, swap the animal and run this in a SECOND terminal:
 
 ros2 run mosquito_preference_assay rearm
@@ -186,7 +196,7 @@ ros2 run mosquito_preference_assay rearm
 # Ctrl-C the launch when you are done for the session.
 
 
-# --- 3d. how a run begins and ends ------------------------------------------
+# --- 3e. how a run begins and ends ------------------------------------------
 # Recording starts AT THE TRIGGER -- nothing is written while waiting for an
 # animal. BOTH bags close when the trial ends, automatically.
 #
@@ -198,13 +208,13 @@ ros2 run mosquito_preference_assay rearm
 #     hold_after_trial:=false
 
 
-# --- 3e. without the always-on stimuli (circles appear at detection) --------
+# --- 3f. without the always-on stimuli (circles appear at detection) --------
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \
     experiment_file:=sippell_retest_experiment \
     save_dir:=/mnt/data/$(date +%F)
 
 
-# --- 3f. useful variations --------------------------------------------------
+# --- 3g. useful variations --------------------------------------------------
 
 # name the run folder after the animal
 ros2 launch mosquito_preference_assay arena_experiment.launch.py \

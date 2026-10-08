@@ -1479,6 +1479,23 @@ equipment, indicator lights, mesh edges and reflections are all mosquito-sized
 blobs as far as the detector is concerned, and any of them can start a trial.
 Setting it is part of commissioning a rig, not an optimisation.
 
+**Watching it during a run: `arena_view`.**
+
+```bash
+ros2 launch mosquito_preference_assay arena_view.launch.py
+```
+
+A live camera feed with the trigger zone drawn on it — the only region where
+a mosquito can start a trial — and everything outside dimmed. Read-only and
+safe to leave open all session, unlike `trigger_roi`, which edits the zone and
+writes files.
+
+It reads the same config the detector reads, so the box on screen is the box
+that fires trials. Defaults to **cam1**; `camera:=cam0` for the other one.
+`display_hz:=5` renders less often on a loaded machine — it drops frames
+before converting them, so the window never competes with the detector for CPU
+during a trial.
+
 **Drawing it: `trigger_roi`.** Point it at the live camera and drag the box
 onto the arena. It is the `display_check` of the camera side.
 
