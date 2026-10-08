@@ -1490,6 +1490,21 @@ a mosquito can start a trial — and everything outside dimmed. Read-only and
 safe to leave open all session, unlike `trigger_roi`, which edits the zone and
 writes files.
 
+The zone is **green while the rig is armed** and a mosquito entering it would
+start a trial, **grey when it would not** — during a trial, after one, or
+before the display is up. The banner says which, and names the pairing:
+
+```
+ARMED
+LEFT static_black      RIGHT jitter_25
+trigger zone  300,250 -> 1100,900
+```
+
+If two experiments are running at once the banner flickers between their
+pairings, which looks like a rendering fault and is really a launch that never
+exited — so the window says so outright rather than leaving you to work it
+out.
+
 It reads the same config the detector reads, so the box on screen is the box
 that fires trials. Defaults to **cam1**; `camera:=cam0` for the other one.
 `display_hz:=5` renders less often on a loaded machine — it drops frames
