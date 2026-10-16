@@ -565,6 +565,26 @@ It uses `mode: sample` (two distinct stimuli drawn per trial, so every pairing
 is sampled across enough animals); the file's header comment shows the
 `mode: pairs` block to paste in for a control-versus-each design instead.
 
+### The presence baseline — `static_vs_blank`
+
+One still dark circle against an empty side, with the side randomised per
+trial:
+
+```bash
+ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+    experiment_file:=static_vs_blank save_dir:=/mnt/data/$(date +%F)
+```
+
+Nothing moves, so a preference is for the target's presence alone — the
+baseline every motion condition has to be read against. Two stimuli means
+exactly **one pairing**, so every animal answers the same question and only
+the side varies, which accumulates n on it faster than any multi-condition
+design.
+
+It is also the easiest experiment to check a rig with: one circle, no motion,
+so if it is not where you expect, the problem is the alignment or the display
+rather than the stimulus.
+
 ### The jitter contrast — `sippell_retest_experiment`
 
 The four-condition study this package is currently set up to run:

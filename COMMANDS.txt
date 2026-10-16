@@ -349,6 +349,10 @@ ls ~/ros2_ws/src/mosquito_preference_assay/experiments/
 
 #   sippell_retest_experiment  4 conditions: blank, static dark, and two
 #                              jitter amplitudes (25 / 75 px). 6 pairings.
+#   static_vs_blank            a still dark circle against an empty side,
+#                              side randomised. One pairing, so every animal
+#                              answers the same question. Also the simplest
+#                              experiment to check a rig with.
 #   ten_stimulus_panel         10 stimuli, white background
 #   two_choice_default         the built-in default
 #   control_vs_grating         simple two-condition control

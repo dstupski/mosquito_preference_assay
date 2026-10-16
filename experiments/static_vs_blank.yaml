@@ -1,0 +1,63 @@
+# Is a dark target better than nothing?
+#
+# The floor of the assay: one still dark circle against an empty side, with
+# which side it lands on randomised per trial. Nothing moves, so a preference
+# here is for the target's presence alone -- which is the baseline every
+# motion condition has to be read against.
+#
+# It is also the easiest experiment to check a rig with. One circle, no
+# motion: if it is not where you expect, the problem is alignment or the
+# display, not the stimulus.
+#
+# Two stimuli means exactly ONE pairing, so every animal sees the same
+# comparison and only the side varies. That is the fastest way to accumulate
+# n on a single question.
+#
+# ---------------------------------------------------------------------------
+# RIG SETUP LIVES ELSEWHERE. Nothing here is machine-specific, so the same
+# file runs on any rig. Which screen, and where on it, comes from your assay
+# params and the calibration display_check writes -- those override the
+# display: block below, centres AND diameter, so leave this file portable.
+#
+#     ros2 launch mosquito_preference_assay arena_experiment.launch.py \
+#         experiment_file:=static_vs_blank
+# ---------------------------------------------------------------------------
+schema: mosquito_preference_assay/experiment/1
+name: static_vs_blank
+description: >-
+  A still dark circle against an empty side, side randomised per trial. The
+  presence-only baseline, and the simplest experiment to verify a rig with.
+
+stimuli:
+  # nothing drawn -- the arena background shows through
+  blank:
+    type: blank
+
+  # a motionless dark circle, the same fill every other experiment here uses
+  static_black:
+    type: static_dark
+    params: {fill_gray: 20}
+
+conditions:
+  # Two stimuli, so sample has exactly one pairing to draw: blank against
+  # static_black, with {a, b} randomising which side each lands on.
+  mode: sample
+
+duration_sec: 15.0
+
+display:
+  circle_diameter_px: 220
+
+  # White ground, so the dark circle is maximum contrast.
+  background_gray: 255
+
+  # null -> auto: left at a quarter of the screen width, right at three
+  # quarters, both at mid-height. display_check's calibration overrides these
+  # per rig, so leave them alone here.
+  left_center_px: null
+  right_center_px: null
+
+# Presence of this block makes the run triggered: the node opens ARMED and
+# waits. arena_experiment.launch.py overrides the topic to wire the detector in.
+trigger:
+  topic: /arena/mosquito_present
